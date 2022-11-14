@@ -703,13 +703,13 @@ pub fn execute_transfer_token(
     }
 
     let message = CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: config.fury_token_address,
+        contract_addr: config.fury_token_address.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::Transfer {
             recipient: info.sender.to_string(),
             amount,
         }),
         funds: vec![],
-    });
+    });    
 
     Ok(Response::new().add_message(message))
 }
