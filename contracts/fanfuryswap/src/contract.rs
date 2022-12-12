@@ -707,9 +707,9 @@ pub fn execute_transfer_token(
         msg: to_binary(&Cw20ExecuteMsg::Transfer {
             recipient: info.sender.to_string(),
             amount,
-        }),
+        })?,
         funds: vec![],
-    });    
+    });
 
     Ok(Response::new().add_message(message))
 }
@@ -908,9 +908,18 @@ pub fn execute_swap(
         },
     )?;
 
+    let mut swap_type = String::new();
+
+    match input_token_enum {
+        TokenSelect::Token1 => swap_type = "native_token".to_string(),
+        TokenSelect::Token2 => swap_type = "fury_token".to_string(),
+    }
+
     Ok(Response::new()
         .add_messages(transfer_msgs)
         .add_attributes(vec![
+            attr("action", "swap"),
+            attr("swap_type", swap_type),
             attr("native_sold", input_amount),
             attr("token_bought", token_bought),
         ]))

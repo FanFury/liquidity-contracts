@@ -23,7 +23,7 @@ pub struct Config {
     ///Specified in percentage multiplied by 100, i.e. 100% = 10000 and 0.01% = 1
     pub control_fees: Uint128,
     pub max_bonding_limit_per_user: u64,
-    pub usdc_ibc_symbol:String,
+    pub usdc_ibc_symbol: String,
 }
 
 pub const CONFIG_KEY: &str = "config";
@@ -111,7 +111,6 @@ pub struct ClubBondingDetails {
     pub bonding_duration: u64,
 }
 
-
 /// This is used for saving various bonding details for an unstaked club
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
 #[serde(rename_all = "snake_case")]
@@ -144,12 +143,13 @@ pub const CLUB_PREVIOUS_OWNER_DETAILS: Map<String, ClubPreviousOwnerDetails> =
     Map::new("club_previous_owner_details");
 
 pub const REWARD: Item<Uint128> = Item::new("staking_reward");
-pub const REWARD_GIVEN_IN_CURRENT_TIMESTAMP: Item<Uint128> = Item::new("reward_given_in_current_timestamp");
+pub const REWARD_GIVEN_IN_CURRENT_TIMESTAMP: Item<Uint128> =
+    Item::new("reward_given_in_current_timestamp");
 pub const CLUB_REWARD_NEXT_TIMESTAMP: Item<Timestamp> = Item::new("club_reward_next_timestamp");
 
 /// Snapshot of ranking by stakes
-pub const CLUB_STAKING_SNAPSHOT: Map<String, Uint128> =
-    Map::new("club_staking_snapshot");
+pub const CLUB_STAKING_SNAPSHOT: Map<String, Uint128> = Map::new("club_staking_snapshot");
 
 /// Snapshot of winning club details
-pub const WINNING_CLUB_DETAILS_SNAPSHOT: Item<WinningClubDetails> = Item::new("winning_club_details_snapshot");
+pub const WINNING_CLUB_DETAILS_SNAPSHOT: Item<WinningClubDetails> =
+    Item::new("winning_club_details_snapshot");

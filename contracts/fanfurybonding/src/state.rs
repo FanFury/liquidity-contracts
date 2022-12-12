@@ -1,10 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Addr, Uint128};
-use cw_storage_plus::{Item, Map};
 use crate::msg::BondingRecord;
+use cosmwasm_std::{Addr, Uint128};
 use cw20::Denom;
+use cw_storage_plus::{Item, Map};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
@@ -22,8 +22,7 @@ pub struct Config {
     pub daily_vesting_amount: Uint128,
     pub cumulated_amount: Uint128,
     pub daily_current_bond_amount: Uint128,
-    pub last_timestamp: u64
-
+    pub last_timestamp: u64,
 }
 
 pub const CONFIG_KEY: &str = "config";

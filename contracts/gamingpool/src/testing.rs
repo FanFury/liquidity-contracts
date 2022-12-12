@@ -2,15 +2,27 @@
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{coin, Uint128};
-    use cosmwasm_std::Addr;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::Addr;
+    use cosmwasm_std::{coin, Uint128};
 
-    use crate::contract::{CLAIMED_REWARD, GAME_CANCELLED, GAME_COMPLETED, GAME_POOL_OPEN, INITIAL_REFUND_AMOUNT, instantiate};
-    use crate::execute::{cancel_game, claim_refund, claim_reward, create_pool, game_pool_bid_submit, game_pool_reward_distribute, lock_game, save_team_details, set_platform_fee_wallets, set_pool_type_params};
+    use crate::contract::{
+        instantiate, CLAIMED_REWARD, GAME_CANCELLED, GAME_COMPLETED, GAME_POOL_OPEN,
+        INITIAL_REFUND_AMOUNT,
+    };
+    use crate::execute::{
+        cancel_game, claim_refund, claim_reward, create_pool, game_pool_bid_submit,
+        game_pool_reward_distribute, lock_game, save_team_details, set_platform_fee_wallets,
+        set_pool_type_params,
+    };
     use crate::msg::InstantiateMsg;
-    use crate::query::{get_team_count_for_user_in_pool_type, query_game_details, query_pool_details, query_team_details};
-    use crate::state::{GameResult, PLATFORM_WALLET_PERCENTAGES, POOL_TEAM_DETAILS, WalletPercentage};
+    use crate::query::{
+        get_team_count_for_user_in_pool_type, query_game_details, query_pool_details,
+        query_team_details,
+    };
+    use crate::state::{
+        GameResult, WalletPercentage, PLATFORM_WALLET_PERCENTAGES, POOL_TEAM_DETAILS,
+    };
 
     #[test]
     fn test_create_and_query_game() {
@@ -176,7 +188,12 @@ mod tests {
             }
         }
 
-        let queryRes = query_team_details(&mut deps.storage, poolId.to_string(), teamId.to_string(), "gamer001".to_string());
+        let queryRes = query_team_details(
+            &mut deps.storage,
+            poolId.to_string(),
+            teamId.to_string(),
+            "gamer001".to_string(),
+        );
         match queryRes {
             Ok(poolTeamDetail) => {
                 assert_eq!(poolTeamDetail.pool_id, poolId.to_string());
@@ -1005,7 +1022,8 @@ mod tests {
                 assert_eq!(1, 2);
             }
         }
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::from(100u128));
             assert_eq!(team[1].reward_amount, Uint128::from(200u128));
@@ -1313,7 +1331,8 @@ mod tests {
                 assert_eq!(5, 6);
             }
         }
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::zero());
             assert_eq!(team[1].reward_amount, Uint128::zero());
@@ -1508,10 +1527,8 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
-
             game_results,
             true,
             true,
@@ -1536,7 +1553,8 @@ mod tests {
                 assert_eq!(5, 6);
             }
         }
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::from(500u128));
             assert_eq!(team[1].reward_amount, Uint128::from(200u128));
@@ -1576,17 +1594,18 @@ mod tests {
             }
         }
 
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::from(500u128)); // TODO This reward should be 0 after full functionality working.
             assert_eq!(team[1].reward_amount, Uint128::from(200u128)); // TODO This reward should be 0 after full functionality working.
             assert_eq!(team[2].reward_amount, Uint128::from(300u128)); // TODO This reward should be 0 after full functionality working.
-            /*
-                        23 Mar 2022, commenting this out because call to proxy cannot be made
-                        assert_eq!(team[0].claimed_reward, CLAIMED_REWARD);
-                        assert_eq!(team[1].claimed_reward, CLAIMED_REWARD);
-                        assert_eq!(team[2].claimed_reward, CLAIMED_REWARD);
-            */
+                                                                       /*
+                                                                                   23 Mar 2022, commenting this out because call to proxy cannot be made
+                                                                                   assert_eq!(team[0].claimed_reward, CLAIMED_REWARD);
+                                                                                   assert_eq!(team[1].claimed_reward, CLAIMED_REWARD);
+                                                                                   assert_eq!(team[2].claimed_reward, CLAIMED_REWARD);
+                                                                       */
         }
     }
 
@@ -1758,8 +1777,7 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
             game_results,
             true,
@@ -1785,7 +1803,8 @@ mod tests {
                 assert_eq!(5, 6);
             }
         }
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_str(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_str(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::from(100u128));
             assert_eq!(team[1].reward_amount, Uint128::from(200u128));
@@ -1824,17 +1843,18 @@ mod tests {
             }
         }
 
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::from(100u128)); // TODO This reward should be 0 after full functionality working.
             assert_eq!(team[1].reward_amount, Uint128::from(200u128)); // TODO This reward should be 0 after full functionality working.
             assert_eq!(team[2].reward_amount, Uint128::from(300u128)); // TODO This reward should be 0 after full functionality working.
-            /*
-                        23 Mar 2022, commenting this out because call to proxy cannot be made
-                        assert_eq!(team[0].claimed_reward, CLAIMED_REWARD);
-                        assert_eq!(team[1].claimed_reward, CLAIMED_REWARD);
-                        assert_eq!(team[2].claimed_reward, CLAIMED_REWARD);
-            */
+                                                                       /*
+                                                                                   23 Mar 2022, commenting this out because call to proxy cannot be made
+                                                                                   assert_eq!(team[0].claimed_reward, CLAIMED_REWARD);
+                                                                                   assert_eq!(team[1].claimed_reward, CLAIMED_REWARD);
+                                                                                   assert_eq!(team[2].claimed_reward, CLAIMED_REWARD);
+                                                                       */
         }
 
         /*
@@ -2034,7 +2054,8 @@ mod tests {
                 assert_eq!(3, 4);
             }
         }
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_ref(), "gamer002".as_ref()));
         let mut teams = Vec::new();
         match team_details {
             Ok(some_teams) => {
@@ -2168,7 +2189,10 @@ mod tests {
         );
 
         let query_pool_details_1 = query_pool_details(&mut deps.storage, pool_id_1.to_string());
-        println!("This is the value for the  pool_details{:?}", query_pool_details_1);
+        println!(
+            "This is the value for the  pool_details{:?}",
+            query_pool_details_1
+        );
         match query_pool_details_1 {
             Ok(pool_detail_1) => {
                 assert_eq!(pool_detail_1.current_teams_count, 3u32);
@@ -2219,11 +2243,11 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
             game_results,
-            true, true,
+            true,
+            true,
             Uint128::zero(),
         );
 
@@ -2363,8 +2387,7 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
             game_results.clone(),
             true,
@@ -2442,8 +2465,7 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
             game_results,
             true,
@@ -2647,8 +2669,7 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
             game_results.clone(),
             true,
@@ -2674,7 +2695,8 @@ mod tests {
                 assert_eq!(5, 6);
             }
         }
-        let team_details = POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_str(), "gamer002".as_ref()));
+        let team_details =
+            POOL_TEAM_DETAILS.load(&mut deps.storage, (pool_id_1.as_str(), "gamer002".as_ref()));
         for team in team_details {
             assert_eq!(team[0].reward_amount, Uint128::from(100u128));
             assert_eq!(team[1].reward_amount, Uint128::from(200u128));
@@ -2685,8 +2707,7 @@ mod tests {
             deps.as_mut(),
             mock_env(),
             adminInfo.clone(),
-                        "GAME0001".to_string(),
-
+            "GAME0001".to_string(),
             pool_id_1.to_string(),
             game_results,
             true,
@@ -2759,4 +2780,3 @@ mod tests {
         }
     }
 }
-

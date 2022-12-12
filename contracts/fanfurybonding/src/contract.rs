@@ -6,11 +6,11 @@ use crate::msg::{
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    attr, from_binary, to_binary, Addr, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
-    QuerierWrapper, QueryRequest, Response, StdResult, Storage, Uint128, WasmMsg, WasmQuery,
+    attr, to_binary, Addr, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
+    QuerierWrapper, QueryRequest, Response, StdResult, Storage, Uint128, WasmQuery,
 };
 use cw2::{get_contract_version, set_contract_version};
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg, Denom};
+use cw20::Denom;
 use cw_storage_plus::Bound;
 use cw_utils::maybe_addr;
 
@@ -66,6 +66,7 @@ pub fn execute(
     match msg {
         ExecuteMsg::UpdateOwner { owner } => execute_update_owner(deps, env, info, owner),
         ExecuteMsg::UpdateEnabled { enabled } => execute_update_enabled(deps, env, info, enabled),
+        ExecuteMsg::UpdateCoinDenom { denom } => execute_update_coin_denom(deps, env, info, denom),
         ExecuteMsg::UpdateConfig {
             treasury_address,
             lock_seconds,
@@ -109,13 +110,15 @@ pub fn check_owner(storage: &mut dyn Storage, address: Addr) -> Result<Response,
 
 pub fn execute_update_owner(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     owner: Addr,
 ) -> Result<Response, ContractError> {
     check_owner(deps.storage, info.sender.clone())?;
 
     let mut cfg = CONFIG.load(deps.storage)?;
+
+    cfg.owner = owner.clone();
 
     CONFIG.save(deps.storage, &cfg)?;
 
@@ -124,9 +127,28 @@ pub fn execute_update_owner(
     );
 }
 
+pub fn execute_update_coin_denom(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    denom: String,
+) -> Result<Response, ContractError> {
+    check_owner(deps.storage, info.sender.clone())?;
+
+    let mut cfg = CONFIG.load(deps.storage)?;
+
+    cfg.usdc_denom = denom.clone();
+
+    CONFIG.save(deps.storage, &cfg)?;
+
+    return Ok(
+        Response::new().add_attributes(vec![attr("action", "update_denom"), attr("denom", denom)])
+    );
+}
+
 pub fn execute_update_enabled(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     enabled: bool,
 ) -> Result<Response, ContractError> {
@@ -145,7 +167,7 @@ pub fn execute_update_enabled(
 
 pub fn execute_update_config(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     treasury_address: Addr,
     lock_seconds: u64,

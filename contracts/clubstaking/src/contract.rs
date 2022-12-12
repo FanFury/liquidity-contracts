@@ -1,23 +1,26 @@
-use cosmwasm_std::{
-    BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env, from_binary, MessageInfo, Order,
-    Reply, Response, StdError, StdResult, Storage, SubMsg, to_binary, Uint128, WasmMsg, QueryRequest, WasmQuery
-};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::{entry_point, Timestamp};
+use cosmwasm_std::{
+    from_binary, to_binary, BankMsg, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
+    QueryRequest, Reply, Response, StdError, StdResult, Storage, SubMsg, Uint128, WasmMsg,
+    WasmQuery,
+};
 
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 use cw2::set_contract_version;
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 use cw_storage_plus::Map;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, ReceivedMsg};
 use crate::state::{
-    CLUB_BONDING_DETAILS, CLUB_OWNERSHIP_DETAILS, CLUB_PREVIOUS_OWNER_DETAILS, CLUB_REWARD_NEXT_TIMESTAMP, CLUB_STAKING_DETAILS,
-    CLUB_STAKING_SNAPSHOT, ClubBondingDetails, ClubOwnershipDetails,
-    ClubPreviousOwnerDetails, ClubStakingDetails, Config, CONFIG, REWARD, REWARD_GIVEN_IN_CURRENT_TIMESTAMP,
-    WINNING_CLUB_DETAILS_SNAPSHOT, WinningClubDetails,
+    ClubBondingDetails, ClubOwnershipDetails, ClubPreviousOwnerDetails, ClubStakingDetails, Config,
+    WinningClubDetails, CLUB_BONDING_DETAILS, CLUB_OWNERSHIP_DETAILS, CLUB_PREVIOUS_OWNER_DETAILS,
+    CLUB_REWARD_NEXT_TIMESTAMP, CLUB_STAKING_DETAILS, CLUB_STAKING_SNAPSHOT, CONFIG, REWARD,
+    REWARD_GIVEN_IN_CURRENT_TIMESTAMP, WINNING_CLUB_DETAILS_SNAPSHOT,
 };
-use wasmswap::msg::{QueryMsg as WasmswapQueryMsg, Token1ForToken2PriceResponse, Token2ForToken1PriceResponse};
+use wasmswap::msg::{
+    QueryMsg as WasmswapQueryMsg, Token1ForToken2PriceResponse, Token2ForToken1PriceResponse,
+};
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:clubstaking";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -42,7 +45,7 @@ const CLUB_LOCKING_DURATION: u64 = 0u64;
 // No longer applicable so setting it to 0
 const CLUB_STAKING_DURATION: u64 = 0u64;
 
-// this is 7 day bonding period in seconds, after withdrawing a stake 
+// this is 7 day bonding period in seconds, after withdrawing a stake
 // TODO _ Revert after DEBUG : this is 1 hour for testing purposes only
 // const CLUB_BONDING_DURATION: u64 = 3600u64;
 // - now part of instantiation msg.bonding_duration
@@ -80,7 +83,7 @@ pub fn instantiate(
         transaction_fees: msg.transaction_fees,
         control_fees: msg.control_fees,
         max_bonding_limit_per_user: msg.max_bonding_limit_per_user,
-        usdc_ibc_symbol: msg.usdc_ibc_symbol
+        usdc_ibc_symbol: msg.usdc_ibc_symbol,
     };
     CONFIG.save(deps.storage, &config)?;
 
@@ -105,15 +108,11 @@ pub fn execute(
             club_name,
             amount,
             auto_stake,
-        } => {
-            stake_on_a_club(deps, env, info, staker, club_name, amount, auto_stake)
-        }
+        } => stake_on_a_club(deps, env, info, staker, club_name, amount, auto_stake),
         ExecuteMsg::AssignStakesToAClub {
             stake_list,
-            club_name
-        } => {
-            assign_stakes_to_a_club(deps, env, info, stake_list, club_name)
-        }
+            club_name,
+        } => assign_stakes_to_a_club(deps, env, info, stake_list, club_name),
         ExecuteMsg::BuyAClub {
             buyer,
             seller,
@@ -129,9 +128,7 @@ pub fn execute(
             seller,
             club_name,
             auto_stake,
-        } => {
-            assign_a_club(deps, env, info, buyer, seller, club_name, auto_stake)
-        }
+        } => assign_a_club(deps, env, info, buyer, seller, club_name, auto_stake),
         ExecuteMsg::ReleaseClub { owner, club_name } => {
             release_club(deps, env, info, owner, club_name)
         }
@@ -160,18 +157,22 @@ pub fn execute(
             club_name,
             is_first_batch,
             is_final_batch,
-        } => {
-            calculate_and_distribute_rewards(deps, env, info, staker_list, club_name, is_first_batch, is_final_batch)
-        }
+        } => calculate_and_distribute_rewards(
+            deps,
+            env,
+            info,
+            staker_list,
+            club_name,
+            is_first_batch,
+            is_final_batch,
+        ),
         ExecuteMsg::ClaimStakerRewards { staker, club_name } => {
             claim_staker_rewards(deps, info, staker, club_name)
         }
         ExecuteMsg::IncreaseRewardAmount {
             reward_from,
             amount,
-        } => {
-            increase_reward_amount(deps, env, info, reward_from, amount)
-        }
+        } => increase_reward_amount(deps, env, info, reward_from, amount),
     }
 }
 
@@ -179,13 +180,10 @@ pub fn execute(
 pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
     Ok(Response::default())
 }
-pub fn uusd(
-    deps: &DepsMut,
-) -> Result<String, ContractError> {
+pub fn uusd(deps: &DepsMut) -> Result<String, ContractError> {
     let config = CONFIG.load(deps.storage)?;
-    return Ok(config.usdc_ibc_symbol)
+    return Ok(config.usdc_ibc_symbol);
 }
-
 
 fn received_message(
     deps: DepsMut,
@@ -398,8 +396,7 @@ fn buy_a_club(
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_ust_fees = required_ust_fees
-        * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
     if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
@@ -514,7 +511,8 @@ fn buy_a_club(
 
     let mut stakes = Vec::new();
     let mut user_stake_exists = false;
-    let all_stakes = CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &buyer.clone()))?;
+    let all_stakes =
+        CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &buyer.clone()))?;
     match all_stakes {
         Some(some_stakes) => {
             stakes = some_stakes;
@@ -694,7 +692,8 @@ fn assign_a_club(
 
     let mut stakes = Vec::new();
     let mut user_stake_exists = false;
-    let all_stakes = CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &buyer.clone()))?;
+    let all_stakes =
+        CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &buyer.clone()))?;
     match all_stakes {
         Some(some_stakes) => {
             stakes = some_stakes;
@@ -829,8 +828,7 @@ fn stake_on_a_club(
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_ust_fees = required_ust_fees
-        * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
     if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
@@ -1032,8 +1030,7 @@ fn withdraw_stake_from_a_club(
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_ust_fees = required_ust_fees
-        * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
     if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
@@ -1043,7 +1040,8 @@ fn withdraw_stake_from_a_club(
     }
 
     let mut stakes = Vec::new();
-    let all_stakes = CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
+    let all_stakes =
+        CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
     match all_stakes {
         Some(some_stakes) => {
             stakes = some_stakes;
@@ -1082,7 +1080,8 @@ fn withdraw_stake_from_a_club(
         if immediate_withdrawal == IMMEDIATE_WITHDRAWAL {
             // parse bonding to check maturity and sort with descending order of timestamp
             let mut bonds = Vec::new();
-            let mut all_bonds = CLUB_BONDING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
+            let mut all_bonds = CLUB_BONDING_DETAILS
+                .may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
             let mut s_bonds = Vec::new();
             match all_bonds {
                 Some(some_bonds) => {
@@ -1155,8 +1154,11 @@ fn withdraw_stake_from_a_club(
             //     }
             // }
 
-
-            CLUB_BONDING_DETAILS.save(deps.storage, (&club_name.clone(), &staker.clone()), &updated_bonds)?;
+            CLUB_BONDING_DETAILS.save(
+                deps.storage,
+                (&club_name.clone(), &staker.clone()),
+                &updated_bonds,
+            )?;
 
             // update the staking details
             save_staking_details(
@@ -1169,7 +1171,7 @@ fn withdraw_stake_from_a_club(
                 DECREASE_STAKE,
             )?;
 
-            // // PRE-MATURITY Withdrawal directly from Basic Stake , not even into Bonding - commented out to bypass 
+            // // PRE-MATURITY Withdrawal directly from Basic Stake , not even into Bonding - commented out to bypass
             if withdrawal_amount > unbonded_amount {
                 println!("Not Sufficient Matured Unstaked Bonds");
                 // // Deduct 10% and burn it
@@ -1193,7 +1195,9 @@ fn withdraw_stake_from_a_club(
                 }));
             }
 
-            let all_bonds = CLUB_BONDING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?.unwrap_or_default();
+            let all_bonds = CLUB_BONDING_DETAILS
+                .may_load(deps.storage, (&club_name.clone(), &staker.clone()))?
+                .unwrap_or_default();
             let bonds_for_staker = all_bonds.len() as u64;
             if config.max_bonding_limit_per_user <= bonds_for_staker {
                 println!("bonds for this staker = {:?}", bonds_for_staker);
@@ -1304,7 +1308,8 @@ fn save_staking_details(
 ) -> Result<Response, ContractError> {
     // Get the exising stakes for this club
     let mut stakes = Vec::new();
-    let all_stakes = CLUB_STAKING_DETAILS.may_load(storage, (&club_name.clone(), &staker.clone()))?;
+    let all_stakes =
+        CLUB_STAKING_DETAILS.may_load(storage, (&club_name.clone(), &staker.clone()))?;
     match all_stakes {
         Some(some_stakes) => {
             stakes = some_stakes;
@@ -1341,7 +1346,11 @@ fn save_staking_details(
     }
     if already_staked == true {
         // save the modified stakes - with updation or removal of existing stake
-        CLUB_STAKING_DETAILS.save(storage, (&club_name.clone(), &staker.clone()), &updated_stakes)?;
+        CLUB_STAKING_DETAILS.save(
+            storage,
+            (&club_name.clone(), &staker.clone()),
+            &updated_stakes,
+        )?;
     } else if increase_stake == INCREASE_STAKE {
         stakes.push(ClubStakingDetails {
             staker_address: staker.clone(),
@@ -1391,7 +1400,8 @@ fn save_bonding_details(
 ) -> Result<Response, ContractError> {
     // Get the exising bonds for this club
     let mut bonds = Vec::new();
-    let all_bonds = CLUB_BONDING_DETAILS.may_load(storage, (&club_name.clone(), &bonder.clone()))?;
+    let all_bonds =
+        CLUB_BONDING_DETAILS.may_load(storage, (&club_name.clone(), &bonder.clone()))?;
     match all_bonds {
         Some(some_bonds) => {
             bonds = some_bonds;
@@ -1462,8 +1472,7 @@ fn claim_staker_rewards(
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_ust_fees = required_ust_fees
-        * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
     if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
@@ -1474,7 +1483,8 @@ fn claim_staker_rewards(
 
     // Get the exising stakes for this club
     let mut stakes = Vec::new();
-    let all_stakes = CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
+    let all_stakes =
+        CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
     match all_stakes {
         Some(some_stakes) => {
             stakes = some_stakes;
@@ -1577,12 +1587,21 @@ fn calculate_and_distribute_rewards(
 
     // No need to calculate if there is no reward amount
     if total_reward == Uint128::zero() {
-        return Ok(Response::new().add_attribute("response", "no accumulated rewards")
-            .add_attribute("next_timestamp", next_reward_time.to_string())
-        );
+        return Ok(Response::new()
+            .add_attribute("response", "no accumulated rewards")
+            .add_attribute("next_timestamp", next_reward_time.to_string()));
     }
-    distribute_reward_to_club_stakers(deps, env, config.reward_periodicity, saved_next_reward_timestamp,
-                                      staker_list.clone(), club_name.clone(), total_reward, is_first_batch, is_final_batch)
+    distribute_reward_to_club_stakers(
+        deps,
+        env,
+        config.reward_periodicity,
+        saved_next_reward_timestamp,
+        staker_list.clone(),
+        club_name.clone(),
+        total_reward,
+        is_first_batch,
+        is_final_batch,
+    )
 }
 
 fn distribute_reward_to_club_stakers(
@@ -1607,7 +1626,9 @@ fn distribute_reward_to_club_stakers(
         };
         WINNING_CLUB_DETAILS_SNAPSHOT.save(deps.storage, &winning_clubs_info);
     } else {
-        winning_clubs_info = WINNING_CLUB_DETAILS_SNAPSHOT.may_load(deps.storage)?.unwrap_or_default();
+        winning_clubs_info = WINNING_CLUB_DETAILS_SNAPSHOT
+            .may_load(deps.storage)?
+            .unwrap_or_default();
     }
     println!("winning_clubs_info = {:?}", winning_clubs_info);
     let total_number_of_clubs = winning_clubs_info.total_number_of_clubs;
@@ -1637,7 +1658,11 @@ fn distribute_reward_to_club_stakers(
                 .unwrap_or_default()
                 .checked_div(Uint128::from(num_of_winners))
                 .unwrap_or_default();
-            println!("club_name {:?} owner reward for this winner is {:?}", club_name.clone(), owner_reward);
+            println!(
+                "club_name {:?} owner reward for this winner is {:?}",
+                club_name.clone(),
+                owner_reward
+            );
         } else {
             // there are only winning clubs
             // distribute 3% equally to owners in this winning club
@@ -1648,7 +1673,11 @@ fn distribute_reward_to_club_stakers(
                 .unwrap_or_default()
                 .checked_div(Uint128::from(num_of_winners))
                 .unwrap_or_default();
-            println!("all clubs are winners club_name {:?} owner reward for this winner is {:?}", club_name.clone(), owner_reward);
+            println!(
+                "all clubs are winners club_name {:?} owner reward for this winner is {:?}",
+                club_name.clone(),
+                owner_reward
+            );
         }
         // distribute 19% to stakers in winning club
         reward_for_all_stakers_in_winning_club = total_reward
@@ -1658,7 +1687,11 @@ fn distribute_reward_to_club_stakers(
             .unwrap_or_default()
             .checked_div(Uint128::from(num_of_winners))
             .unwrap_or_default();
-        println!("club_name {:?} stakers award in winner is {:?}", club_name.clone(), reward_for_all_stakers_in_winning_club);
+        println!(
+            "club_name {:?} stakers award in winner is {:?}",
+            club_name.clone(),
+            reward_for_all_stakers_in_winning_club
+        );
     } else {
         // other_club_count must be greater than 0
         // distribute 2% equally to owner in this non winning club
@@ -1669,7 +1702,11 @@ fn distribute_reward_to_club_stakers(
             .unwrap_or_default()
             .checked_div(Uint128::from(other_club_count))
             .unwrap_or_default();
-        println!("club_name {:?} owner reward for non winner is {:?}", club_name.clone(), owner_reward);
+        println!(
+            "club_name {:?} owner reward for non winner is {:?}",
+            club_name.clone(),
+            owner_reward
+        );
     }
 
     // distribute the 78% to all stakers
@@ -1683,7 +1720,8 @@ fn distribute_reward_to_club_stakers(
     let mut stake_to_add_for_club = Uint128::zero();
     for staker in staker_list {
         let mut updated_stakes_for_this_staker = Vec::new();
-        let csd = CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
+        let csd =
+            CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
         let staking_details;
         match csd {
             None => {}
@@ -1697,11 +1735,18 @@ fn distribute_reward_to_club_stakers(
                         continue;
                     }
                     if saved_next_reward_timestamp < env.block.time {
-                        updated_stake.staking_start_timestamp = saved_next_reward_timestamp.plus_seconds(reward_periodicity);
-                        println!("setting timestamp for stake = {:?}", updated_stake.staking_start_timestamp);
+                        updated_stake.staking_start_timestamp =
+                            saved_next_reward_timestamp.plus_seconds(reward_periodicity);
+                        println!(
+                            "setting timestamp for stake = {:?}",
+                            updated_stake.staking_start_timestamp
+                        );
                     } else {
                         updated_stake.staking_start_timestamp = saved_next_reward_timestamp;
-                        println!("setting timestamp for stake = {:?}", updated_stake.staking_start_timestamp);
+                        println!(
+                            "setting timestamp for stake = {:?}",
+                            updated_stake.staking_start_timestamp
+                        );
                     }
 
                     let auto_stake = updated_stake.auto_stake;
@@ -1741,7 +1786,11 @@ fn distribute_reward_to_club_stakers(
                 }
             }
         }
-        CLUB_STAKING_DETAILS.save(deps.storage, (&club_name.clone(), &staker.clone()), &updated_stakes_for_this_staker)?;
+        CLUB_STAKING_DETAILS.save(
+            deps.storage,
+            (&club_name.clone(), &staker.clone()),
+            &updated_stakes_for_this_staker,
+        )?;
     }
 
     // Now update the total stake for this club
@@ -1760,13 +1809,23 @@ fn distribute_reward_to_club_stakers(
         },
     )?;
 
-    println!("club_name = {:?} total reward = {:?} reward so far = {:?} club stake increased by {:?}",
-             club_name.clone(), total_reward, reward_given_so_far, stake_to_add_for_club);
+    println!(
+        "club_name = {:?} total reward = {:?} reward so far = {:?} club stake increased by {:?}",
+        club_name.clone(),
+        total_reward,
+        reward_given_so_far,
+        stake_to_add_for_club
+    );
 
-    let mut reward_given_in_current_timestamp = REWARD_GIVEN_IN_CURRENT_TIMESTAMP.may_load(deps.storage)?.unwrap_or_default();
+    let mut reward_given_in_current_timestamp = REWARD_GIVEN_IN_CURRENT_TIMESTAMP
+        .may_load(deps.storage)?
+        .unwrap_or_default();
     reward_given_in_current_timestamp += reward_given_so_far;
     REWARD_GIVEN_IN_CURRENT_TIMESTAMP.save(deps.storage, &reward_given_in_current_timestamp)?;
-    println!("reward_given_in_current_timestamp = {:?}", reward_given_in_current_timestamp);
+    println!(
+        "reward_given_in_current_timestamp = {:?}",
+        reward_given_in_current_timestamp
+    );
 
     if is_final_batch {
         let mut new_reward = Uint128::zero();
@@ -1800,7 +1859,9 @@ fn get_winning_clubs_details(
         total_stake_across_all_clubs += stake_in_club;
         let staked_amount_u128: u128 = stake_in_club.into();
         let staked_amount_i128 = staked_amount_u128 as i128;
-        let previous_amount = CLUB_STAKING_SNAPSHOT.may_load(storage, club.clone())?.unwrap_or_default();
+        let previous_amount = CLUB_STAKING_SNAPSHOT
+            .may_load(storage, club.clone())?
+            .unwrap_or_default();
         let previous_amount_u128: u128 = previous_amount.into();
         let previous_amount_i128 = previous_amount_u128 as i128;
         let difference_amount = staked_amount_i128 - previous_amount_i128;
@@ -1854,22 +1915,19 @@ fn get_winning_clubs_details(
         CLUB_STAKING_SNAPSHOT.save(storage, club.clone(), &stake_in_club)?;
     }
 
-    println!("total_clubs = {:?}, total_stake = {:?}, winning_stake = {:?}, winners = {:?}",
-             total_number_of_clubs,
-             total_stake_across_all_clubs,
-             total_stake_in_winning_club,
-             winners);
-    Ok((total_number_of_clubs,
+    println!(
+        "total_clubs = {:?}, total_stake = {:?}, winning_stake = {:?}, winners = {:?}",
+        total_number_of_clubs, total_stake_across_all_clubs, total_stake_in_winning_club, winners
+    );
+    Ok((
+        total_number_of_clubs,
         total_stake_across_all_clubs,
         total_stake_in_winning_club,
-        winners))
+        winners,
+    ))
 }
 
-
-fn is_winning_club(
-    club_name: String,
-    winner_list: Vec<String>,
-) -> bool {
+fn is_winning_club(club_name: String, winner_list: Vec<String>) -> bool {
     for winner in winner_list {
         if club_name == winner {
             return true;
@@ -1913,9 +1971,14 @@ fn transfer_from_contract_to_wallet(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::QueryPlatformFees { msg } => to_binary(&query_platform_fees(deps, msg)?),
-        QueryMsg::ClubStakingDetails { club_name, user_list } => {
-            to_binary(&query_club_staking_details(deps.storage, club_name, user_list)?)
-        }
+        QueryMsg::ClubStakingDetails {
+            club_name,
+            user_list,
+        } => to_binary(&query_club_staking_details(
+            deps.storage,
+            club_name,
+            user_list,
+        )?),
         QueryMsg::ClubOwnershipDetails { club_name } => {
             to_binary(&query_club_ownership_details(deps.storage, club_name)?)
         }
@@ -1931,11 +1994,15 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::ClubOwnershipDetailsForOwner { owner_address } => to_binary(
             &query_club_ownership_details_for_owner(deps.storage, owner_address)?,
         ),
-        QueryMsg::AllStakes { user_address_list } => to_binary(&query_all_stakes(deps.storage, user_address_list)?),
+        QueryMsg::AllStakes { user_address_list } => {
+            to_binary(&query_all_stakes(deps.storage, user_address_list)?)
+        }
         QueryMsg::AllStakesForUser { user_address } => {
             to_binary(&query_all_stakes_for_user(deps.storage, user_address)?)
         }
-        QueryMsg::AllBonds { user_address_list } => to_binary(&query_all_bonds(deps.storage, user_address_list)?),
+        QueryMsg::AllBonds { user_address_list } => {
+            to_binary(&query_all_bonds(deps.storage, user_address_list)?)
+        }
         QueryMsg::ClubBondingDetailsForUser {
             club_name,
             user_address,
@@ -1945,10 +2012,9 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             user_address,
         )?),
         QueryMsg::RewardAmount {} => to_binary(&query_reward_amount(deps.storage)?),
-        QueryMsg::QueryStakerRewards {
-            staker,
-            club_name,
-        } => to_binary(&query_staker_rewards(deps, staker, club_name)?),
+        QueryMsg::QueryStakerRewards { staker, club_name } => {
+            to_binary(&query_staker_rewards(deps, staker, club_name)?)
+        }
     }
 }
 
@@ -1958,67 +2024,74 @@ pub fn query_platform_fees(deps: Deps, msg: Binary) -> StdResult<Uint128> {
     let fury_amount_provided;
     match from_binary(&msg) {
         Ok(ExecuteMsg::IncreaseRewardAmount {
-               reward_from: _,
-               amount: _,
-           }) => {
+            reward_from: _,
+            amount: _,
+        }) => {
             return Ok(Uint128::zero());
         }
         Ok(ExecuteMsg::BuyAClub {
-               buyer: _,
-               seller: _,
-               club_name: _,
-               auto_stake: _,
-           }) => {
+            buyer: _,
+            seller: _,
+            club_name: _,
+            auto_stake: _,
+        }) => {
             platform_fees_percentage = config.platform_fees + config.transaction_fees;
             fury_amount_provided = config.club_price;
         }
         Ok(ExecuteMsg::AssignAClub {
-               buyer: _,
-               seller: _,
-               club_name: _,
-               auto_stake: _,
-           }) => {
+            buyer: _,
+            seller: _,
+            club_name: _,
+            auto_stake: _,
+        }) => {
             return Ok(Uint128::zero());
         }
         Ok(ExecuteMsg::StakeOnAClub {
-               staker,
-               club_name,
-               amount,
-               auto_stake,
-           }) => {
-            platform_fees_percentage = config.platform_fees + config.transaction_fees + config.control_fees;
+            staker,
+            club_name,
+            amount,
+            auto_stake,
+        }) => {
+            platform_fees_percentage =
+                config.platform_fees + config.transaction_fees + config.control_fees;
             fury_amount_provided = amount;
         }
         Ok(ExecuteMsg::AssignStakesToAClub {
-               stake_list: _,
-               club_name: _,
-           }) => {
+            stake_list: _,
+            club_name: _,
+        }) => {
             return Ok(Uint128::zero());
         }
-        Ok(ExecuteMsg::ReleaseClub { owner: _, club_name: _ }) => {
+        Ok(ExecuteMsg::ReleaseClub {
+            owner: _,
+            club_name: _,
+        }) => {
             return Ok(Uint128::zero());
         }
-        Ok(ExecuteMsg::ClaimOwnerRewards { owner: _, club_name: _ }) => {
+        Ok(ExecuteMsg::ClaimOwnerRewards {
+            owner: _,
+            club_name: _,
+        }) => {
             return Ok(Uint128::zero());
         }
         Ok(ExecuteMsg::ClaimPreviousOwnerRewards { previous_owner: _ }) => {
             return Ok(Uint128::zero());
         }
         Ok(ExecuteMsg::StakeWithdrawFromAClub {
-               staker: _,
-               club_name: _,
-               amount,
-               immediate_withdrawal: _,
-           }) => {
+            staker: _,
+            club_name: _,
+            amount,
+            immediate_withdrawal: _,
+        }) => {
             platform_fees_percentage = config.platform_fees + config.transaction_fees;
             fury_amount_provided = amount;
         }
         Ok(ExecuteMsg::CalculateAndDistributeRewards {
-               staker_list: _,
-               club_name: _,
-               is_first_batch: _,
-               is_final_batch: _,
-           }) => {
+            staker_list: _,
+            club_name: _,
+            is_first_batch: _,
+            is_final_batch: _,
+        }) => {
             return Ok(Uint128::zero());
         }
         Ok(ExecuteMsg::ClaimStakerRewards { staker, club_name }) => {
@@ -2029,20 +2102,19 @@ pub fn query_platform_fees(deps: Deps, msg: Binary) -> StdResult<Uint128> {
             return Err(StdError::generic_err(format!("{:?}", err)));
         }
     }
-    
 
-    let ust_equiv_for_fury_response: Token2ForToken1PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.pool_address.clone().to_string(),
-        msg: to_binary(&WasmswapQueryMsg::Token2ForToken1Price {
-            token2_amount: fury_amount_provided
-        })?,
-    }))?;
+    let ust_equiv_for_fury_response: Token2ForToken1PriceResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.pool_address.clone().to_string(),
+            msg: to_binary(&WasmswapQueryMsg::Token2ForToken1Price {
+                token2_amount: fury_amount_provided,
+            })?,
+        }))?;
     let ust_equiv_for_fury = ust_equiv_for_fury_response.token1_amount;
 
     return Ok(ust_equiv_for_fury
         .checked_mul(platform_fees_percentage)?
         .checked_div(Uint128::from(HUNDRED_PERCENT))?);
-
 }
 
 pub fn query_club_staking_details(
@@ -2065,7 +2137,10 @@ pub fn query_club_staking_details(
     return Ok(all_stakes);
 }
 
-fn query_all_stakes(storage: &dyn Storage, user_address_list: Vec<String>) -> StdResult<Vec<ClubStakingDetails>> {
+fn query_all_stakes(
+    storage: &dyn Storage,
+    user_address_list: Vec<String>,
+) -> StdResult<Vec<ClubStakingDetails>> {
     let mut all_stakes = Vec::new();
     let all_clubs: Vec<String> = CLUB_OWNERSHIP_DETAILS
         .keys(storage, None, None, Order::Ascending)
@@ -2073,7 +2148,8 @@ fn query_all_stakes(storage: &dyn Storage, user_address_list: Vec<String>) -> St
         .collect();
     for club_name in all_clubs {
         for user_address in user_address_list.clone() {
-            let csd = CLUB_STAKING_DETAILS.may_load(storage, (&club_name.clone(), &user_address.clone()))?;
+            let csd = CLUB_STAKING_DETAILS
+                .may_load(storage, (&club_name.clone(), &user_address.clone()))?;
             match csd {
                 Some(staking_details) => {
                     for stake in staking_details {
@@ -2087,7 +2163,10 @@ fn query_all_stakes(storage: &dyn Storage, user_address_list: Vec<String>) -> St
     return Ok(all_stakes);
 }
 
-fn query_all_bonds(storage: &dyn Storage, user_address_list: Vec<String>) -> StdResult<Vec<ClubBondingDetails>> {
+fn query_all_bonds(
+    storage: &dyn Storage,
+    user_address_list: Vec<String>,
+) -> StdResult<Vec<ClubBondingDetails>> {
     let mut all_bonds = Vec::new();
     let all_clubs: Vec<String> = CLUB_OWNERSHIP_DETAILS
         .keys(storage, None, None, Order::Ascending)
@@ -2095,7 +2174,8 @@ fn query_all_bonds(storage: &dyn Storage, user_address_list: Vec<String>) -> Std
         .collect();
     for club_name in all_clubs {
         for user_address in user_address_list.clone() {
-            let cbd = CLUB_BONDING_DETAILS.may_load(storage, (&club_name.clone(), &user_address.clone()))?;
+            let cbd = CLUB_BONDING_DETAILS
+                .may_load(storage, (&club_name.clone(), &user_address.clone()))?;
             match cbd {
                 Some(bonding_details) => {
                     for bond in bonding_details {
@@ -2114,14 +2194,11 @@ fn query_reward_amount(storage: &dyn Storage) -> StdResult<Uint128> {
     return Ok(reward);
 }
 
-fn query_staker_rewards(
-    deps: Deps,
-    staker: String,
-    club_name: String,
-) -> StdResult<Uint128> {
+fn query_staker_rewards(deps: Deps, staker: String, club_name: String) -> StdResult<Uint128> {
     // Get the exising stakes for this club
     let mut stakes = Vec::new();
-    let all_stakes = CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
+    let all_stakes =
+        CLUB_STAKING_DETAILS.may_load(deps.storage, (&club_name.clone(), &staker.clone()))?;
     match all_stakes {
         Some(some_stakes) => {
             stakes = some_stakes;
@@ -2169,7 +2246,8 @@ pub fn query_all_stakes_for_user(
         .map(|k| k.unwrap())
         .collect();
     for club_name in all_clubs {
-        let staking_details = CLUB_STAKING_DETAILS.load(storage, (&club_name.clone(), &user_address.clone()))?;
+        let staking_details =
+            CLUB_STAKING_DETAILS.load(storage, (&club_name.clone(), &user_address.clone()))?;
         for stake in staking_details {
             if stake.staker_address == user_address {
                 all_stakes.push(stake);
@@ -2185,7 +2263,8 @@ pub fn query_club_bonding_details_for_user(
     user_address: String,
 ) -> StdResult<Vec<ClubBondingDetails>> {
     let mut bonds: Vec<ClubBondingDetails> = Vec::new();
-    let cbd = CLUB_BONDING_DETAILS.may_load(storage, (&club_name.clone(), &user_address.clone()))?;
+    let cbd =
+        CLUB_BONDING_DETAILS.may_load(storage, (&club_name.clone(), &user_address.clone()))?;
     match cbd {
         Some(cbd) => {
             bonds = cbd;
@@ -2200,7 +2279,6 @@ pub fn query_club_bonding_details_for_user(
     }
     return Ok(all_bonds);
 }
-
 
 pub fn query_all_club_ownership_details(
     storage: &dyn Storage,
@@ -2252,9 +2330,9 @@ pub fn query_club_ownership_details_for_owner(
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{Addr, coins, CosmosMsg, from_binary, StdError, SubMsg, WasmMsg};
     use cosmwasm_std::coin;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::{coins, from_binary, Addr, CosmosMsg, StdError, SubMsg, WasmMsg};
 
     use super::*;
 
@@ -2288,7 +2366,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -2347,7 +2425,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         let result = buy_a_club(
@@ -2428,7 +2506,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -2498,7 +2576,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(1000, "stake")]);
         let owner2_info = mock_info("owner002", &[coin(1000, "stake")]);
@@ -2528,7 +2606,13 @@ mod tests {
         }
 
         println!("Now releasing the club from owner001");
-        release_club(deps.as_mut(), mock_env(), owner1_info.clone(), "owner001".to_string(), "CLUB001".to_string());
+        release_club(
+            deps.as_mut(),
+            mock_env(),
+            owner1_info.clone(),
+            "owner001".to_string(),
+            "CLUB001".to_string(),
+        );
 
         let queryRes1 = query_club_ownership_details(&mut deps.storage, "CLUB001".to_string());
         match queryRes1 {
@@ -2555,7 +2639,13 @@ mod tests {
         );
 
         println!("Now releasing the club from owner002");
-        release_club(deps.as_mut(), mock_env(), owner2_info.clone(), "owner002".to_string(), "CLUB001".to_string());
+        release_club(
+            deps.as_mut(),
+            mock_env(),
+            owner2_info.clone(),
+            "owner002".to_string(),
+            "CLUB001".to_string(),
+        );
 
         let queryRes2 = query_club_ownership_details(&mut deps.storage, "CLUB001".to_string());
         match queryRes2 {
@@ -2628,7 +2718,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(1000, "stake")]);
 
@@ -2662,12 +2752,24 @@ mod tests {
         for i in 1..7 {
             let mut staker = String::default();
             match i {
-                1 => { staker = "staker001".to_string(); }
-                2 => { staker = "staker002".to_string(); }
-                3 => { staker = "staker003".to_string(); }
-                4 => { staker = "staker004".to_string(); }
-                5 => { staker = "staker005".to_string(); }
-                6 => { staker = "staker006".to_string(); }
+                1 => {
+                    staker = "staker001".to_string();
+                }
+                2 => {
+                    staker = "staker002".to_string();
+                }
+                3 => {
+                    staker = "staker003".to_string();
+                }
+                4 => {
+                    staker = "staker004".to_string();
+                }
+                5 => {
+                    staker = "staker005".to_string();
+                }
+                6 => {
+                    staker = "staker006".to_string();
+                }
                 _ => {}
             }
             user_address_list.push(staker.clone());
@@ -2681,7 +2783,7 @@ mod tests {
                 reward_amount: Uint128::from(CLUB_STAKING_REWARD_AMOUNT),
                 auto_stake: SET_AUTO_STAKE,
             });
-        };
+        }
 
         let staker6Info = mock_info("staker006", &[coin(10, "stake")]);
         assign_stakes_to_a_club(
@@ -2735,7 +2837,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         let mut resp = buy_a_club(
@@ -2853,7 +2955,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -2914,7 +3016,15 @@ mod tests {
         staker_list1.push("staker001".to_string());
         staker_list1.push("owner001".to_string());
         let club_name1 = "CLUB001".to_string();
-        calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), staker_list1.clone(), club_name1, true, true);
+        calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            staker_list1.clone(),
+            club_name1,
+            true,
+            true,
+        );
 
         println!("releasing club");
         release_club(
@@ -3054,7 +3164,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -3067,7 +3177,6 @@ mod tests {
             Uint128::from(1000000u128),
             false, // NO AUTO STAKE
         );
-
 
         let stakerInfo = mock_info("staker001", &[coin(10, "stake")]);
         stake_on_a_club(
@@ -3092,7 +3201,15 @@ mod tests {
         staker_list1.push("staker001".to_string());
         staker_list1.push("owner001".to_string());
         let club_name1 = "CLUB001".to_string();
-        calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), staker_list1.clone(), club_name1, true, true);
+        calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            staker_list1.clone(),
+            club_name1,
+            true,
+            true,
+        );
 
         let mut user_address_list = Vec::new();
         user_address_list.push("staker001".to_string());
@@ -3105,7 +3222,12 @@ mod tests {
                     let staker_address = stake.staker_address;
                     let reward_amount = stake.reward_amount;
                     let staked_amount = stake.staked_amount;
-                    println!("staker : {:?} reward_amount : {:?} staked_amount : {:?}", staker_address.clone(), reward_amount, staked_amount);
+                    println!(
+                        "staker : {:?} reward_amount : {:?} staked_amount : {:?}",
+                        staker_address.clone(),
+                        reward_amount,
+                        staked_amount
+                    );
                     if staker_address == "staker001" {
                         assert_eq!(reward_amount, Uint128::from(970000u128));
                         assert_eq!(staked_amount, Uint128::from(33000u128));
@@ -3153,7 +3275,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -3248,7 +3370,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -3363,7 +3485,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1Info = mock_info("owner001", &[coin(1000, "stake")]);
         buy_a_club(
@@ -3480,7 +3602,7 @@ mod tests {
             admin_info.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         buy_a_club(
@@ -3742,11 +3864,16 @@ mod tests {
                             assert_eq!(1, 2);
                         }
                         if updated_bond.bonded_amount == Uint128::from(63u128) {
-                            updated_bond.bonding_start_timestamp = now.minus_seconds(8 * 24 * 60 * 60);
+                            updated_bond.bonding_start_timestamp =
+                                now.minus_seconds(8 * 24 * 60 * 60);
                         }
                         updated_bonds.push(updated_bond);
                     }
-                    CLUB_BONDING_DETAILS.save(&mut deps.storage, (&club_name.clone(), &user_addr.clone()), &updated_bonds);
+                    CLUB_BONDING_DETAILS.save(
+                        &mut deps.storage,
+                        (&club_name.clone(), &user_addr.clone()),
+                        &updated_bonds,
+                    );
                 }
             }
             Err(e) => {
@@ -3812,7 +3939,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1_info = mock_info("owner001", &[coin(0, "uusd")]);
         let result = buy_a_club(
@@ -3938,7 +4065,7 @@ mod tests {
             adminInfo.clone(),
             instantiate_msg,
         )
-            .unwrap();
+        .unwrap();
 
         let owner1Info = mock_info("owner001", &[coin(1000, "stake")]);
         buy_a_club(
@@ -4084,7 +4211,15 @@ mod tests {
         let mut queryReward = query_reward_amount(&mut deps.storage);
         println!("reward amount before distribution: {:?}", queryReward);
         let club_name1 = "CLUB001".to_string();
-        calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), user_address_list.clone(), club_name1, true, false);
+        calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            user_address_list.clone(),
+            club_name1,
+            true,
+            false,
+        );
         println!("stakes after first distribution");
         let queryRes01 = query_all_stakes(&mut deps.storage, user_address_list.clone());
         match queryRes01 {
@@ -4100,7 +4235,15 @@ mod tests {
         queryReward = query_reward_amount(&mut deps.storage);
         println!("reward amount after first distribution: {:?}", queryReward);
         let club_name2 = "CLUB002".to_string();
-        calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), user_address_list.clone(), club_name2, false, false);
+        calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            user_address_list.clone(),
+            club_name2,
+            false,
+            false,
+        );
         println!("stakes after second distribution");
         let queryRes01 = query_all_stakes(&mut deps.storage, user_address_list.clone());
         match queryRes01 {
@@ -4116,7 +4259,15 @@ mod tests {
         queryReward = query_reward_amount(&mut deps.storage);
         println!("reward amount after second distribution: {:?}", queryReward);
         let club_name3 = "CLUB003".to_string();
-        calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), user_address_list.clone(), club_name3, false, true);
+        calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            user_address_list.clone(),
+            club_name3,
+            false,
+            true,
+        );
 
         queryReward = query_reward_amount(&mut deps.storage);
         println!("reward amount after third distribution: {:?}", queryReward);
@@ -4129,7 +4280,11 @@ mod tests {
                 for stake in all_stakes {
                     let staker_address = stake.staker_address;
                     let staked_amount = stake.staked_amount;
-                    println!("staker : {:?} staked_amount : {:?}", staker_address.clone(), staked_amount);
+                    println!(
+                        "staker : {:?} staked_amount : {:?}",
+                        staker_address.clone(),
+                        staked_amount
+                    );
                     if staker_address == "staker001" {
                         assert_eq!(staked_amount, Uint128::from(470655u128));
                     }
@@ -4258,20 +4413,59 @@ mod tests {
         let queryReward = query_reward_amount(&mut deps.storage);
         println!("reward amount is {:?}", queryReward);
         let club_name1 = "CLUB001".to_string();
-        let res1 = calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), user_address_list.clone(), 
-            club_name1, true, false).unwrap_err();
-        assert_eq!(res1, (ContractError::Std(StdError::GenericErr {msg: String::from("Time for Reward not yet arrived")})));
+        let res1 = calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            user_address_list.clone(),
+            club_name1,
+            true,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(
+            res1,
+            (ContractError::Std(StdError::GenericErr {
+                msg: String::from("Time for Reward not yet arrived")
+            }))
+        );
         println!("");
         println!("");
         let club_name2 = "CLUB002".to_string();
-        let res2 = calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), user_address_list.clone(), 
-            club_name2, false, false).unwrap_err();
-        assert_eq!(res2, (ContractError::Std(StdError::GenericErr {msg: String::from("Time for Reward not yet arrived")})));
+        let res2 = calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            user_address_list.clone(),
+            club_name2,
+            false,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(
+            res2,
+            (ContractError::Std(StdError::GenericErr {
+                msg: String::from("Time for Reward not yet arrived")
+            }))
+        );
         println!("");
         println!("");
         let club_name3 = "CLUB003".to_string();
-        let res3 = calculate_and_distribute_rewards(deps.as_mut(), mock_env(), adminInfo.clone(), user_address_list.clone(), 
-            club_name3, false, true).unwrap_err();
-        assert_eq!(res3, (ContractError::Std(StdError::GenericErr {msg: String::from("Time for Reward not yet arrived")})));
+        let res3 = calculate_and_distribute_rewards(
+            deps.as_mut(),
+            mock_env(),
+            adminInfo.clone(),
+            user_address_list.clone(),
+            club_name3,
+            false,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(
+            res3,
+            (ContractError::Std(StdError::GenericErr {
+                msg: String::from("Time for Reward not yet arrived")
+            }))
+        );
     }
 }
