@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use cw20::Cw20ReceiveMsg;
 
-use crate::state::ClubStakingDetails;
+use crate::state::{ClubStakingDetails, Config};
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct InstantiateMsg {
@@ -36,7 +36,7 @@ pub struct InstantiateMsg {
     /// Control Fee Specified in percentage multiplied by 100, i.e. 100% = 10000 and 0.01% = 1
     pub control_fees: Uint128,
     pub max_bonding_limit_per_user: u64,
-    pub usdc_ibc_symbol:String,
+    pub usdc_ibc_symbol: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -105,7 +105,9 @@ pub enum ExecuteMsg {
         reward_from: String,
         amount: Uint128,
     },
-
+    ChangeConfig {
+        config: Config,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -150,6 +152,7 @@ pub enum QueryMsg {
         staker: String,
         club_name: String,
     },
+    Config {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -166,4 +169,3 @@ pub struct IncreaseRewardAmountCommand {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MigrateMsg {}
-

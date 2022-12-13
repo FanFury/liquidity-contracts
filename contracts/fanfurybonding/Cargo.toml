@@ -30,7 +30,7 @@ serde = { version = "1.0.127", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.26" }
 hex = "0.4"
 wasmswap = {version = "1.0.0-beta", features = ["library"] }
-wasm-bindgen = "0.2"
+
 
 [dev-dependencies]
 cosmwasm-schema = { version = "1.0.0" }
