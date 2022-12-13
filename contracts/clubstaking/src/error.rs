@@ -31,7 +31,7 @@ pub enum ContractError {
         backtrace: Backtrace,
     },
 
-    #[error("Fees received = {received}uusd whereas required = {required}uusd")]
+    #[error("Fees received = {received}ujuno whereas required = {required}ujuno")]
     InsufficientFees {
         received: Uint128,
         required: Uint128,
