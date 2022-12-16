@@ -1,9 +1,19 @@
 use cosmwasm_std::{Deps, Order, StdError, StdResult, Storage, Uint128};
 
-use crate::contract::{DUMMY_WALLET, INITIAL_TEAM_POINTS, INITIAL_TEAM_RANK,
-                      UNCLAIMED_REFUND, UNCLAIMED_REWARD};
+use crate::contract::{
+    DUMMY_WALLET, INITIAL_TEAM_POINTS, INITIAL_TEAM_RANK, UNCLAIMED_REFUND, UNCLAIMED_REWARD,
+};
 use crate::execute::query_platform_fees;
-use crate::state::{CONFIG, FeeDetails, GAME_DETAILS, GAME_RESULT_DUMMY, GameDetails, GameResult, POOL_DETAILS, POOL_TEAM_DETAILS, POOL_TYPE_DETAILS, PoolDetails, PoolTeamDetails, PoolTypeDetails, SWAP_BALANCE_INFO, SwapBalanceDetails};
+use crate::state::{
+    FeeDetails, GameDetails, GameResult, PoolDetails, PoolTeamDetails, PoolTypeDetails,
+    SwapBalanceDetails, CONFIG, FEE_WALLET, GAME_DETAILS, GAME_RESULT_DUMMY, POOL_DETAILS,
+    POOL_TEAM_DETAILS, POOL_TYPE_DETAILS, SWAP_BALANCE_INFO,
+};
+
+pub fn query_get_fee_wallet(deps: Deps) -> StdResult<String> {
+    let address = FEE_WALLET.load(deps.storage)?;
+    return Ok(address);
+}
 
 pub fn query_pool_type_details(
     storage: &dyn Storage,
@@ -16,10 +26,7 @@ pub fn query_pool_type_details(
     };
 }
 
-pub fn query_total_fees(
-    deps: Deps,
-    amount: Uint128,
-) -> StdResult<FeeDetails> {
+pub fn query_total_fees(deps: Deps, amount: Uint128) -> StdResult<FeeDetails> {
     let config = CONFIG.load(deps.storage)?;
     let result = query_platform_fees(amount, config.platform_fee, config.transaction_fee)?;
     return Ok(result);
@@ -50,7 +57,10 @@ pub fn query_pool_team_details(
     };
 }
 
-pub fn query_all_teams(storage: &dyn Storage, users: Vec<String>) -> StdResult<Vec<PoolTeamDetails>> {
+pub fn query_all_teams(
+    storage: &dyn Storage,
+    users: Vec<String>,
+) -> StdResult<Vec<PoolTeamDetails>> {
     let mut all_teams = Vec::new();
     let all_pools: Vec<String> = POOL_DETAILS
         .keys(storage, None, None, Order::Ascending)
@@ -111,7 +121,9 @@ pub fn query_refund(storage: &dyn Storage, gamer: String) -> StdResult<Uint128> 
         let mut pool_details: PoolDetails = Default::default();
         let pd = POOL_DETAILS.load(storage, pool_id.clone());
         match pd {
-            Ok(some) => { pool_details = some; }
+            Ok(some) => {
+                pool_details = some;
+            }
             Err(_) => {
                 continue;
             }
@@ -164,7 +176,8 @@ pub fn query_game_result(
 
     // Get the existing teams for this pool
     let mut teams = Vec::new();
-    let all_teams = POOL_TEAM_DETAILS.may_load(deps.storage, (&*pool_id.clone(), gamer.as_ref()))?;
+    let all_teams =
+        POOL_TEAM_DETAILS.may_load(deps.storage, (&*pool_id.clone(), gamer.as_ref()))?;
     match all_teams {
         Some(some_teams) => {
             teams = some_teams;
@@ -215,7 +228,10 @@ pub fn get_team_count_for_user_in_pool_type(
     for (pool_id, g) in all_pools {
         let team_details = POOL_TEAM_DETAILS.load(storage, (&*pool_id.clone(), gamer.as_ref()))?;
         for team in team_details {
-            if team.pool_type == pool_type && team.game_id == game_id && team.gamer_address == gamer && team.pool_id == pool_id
+            if team.pool_type == pool_type
+                && team.game_id == game_id
+                && team.gamer_address == gamer
+                && team.pool_id == pool_id
             {
                 count += 1;
             }
@@ -298,5 +314,5 @@ pub fn query_swap_data_for_pool(
     pool_id: String,
 ) -> StdResult<SwapBalanceDetails> {
     let info = SWAP_BALANCE_INFO.load(storage, pool_id)?;
-    return Ok(info)
+    return Ok(info);
 }

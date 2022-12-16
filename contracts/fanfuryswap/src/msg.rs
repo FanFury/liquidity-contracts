@@ -82,6 +82,9 @@ pub enum ExecuteMsg {
     TransferToken {
         amount: Uint128,
     },
+    ChangeFeeWallet {
+        address: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -99,6 +102,7 @@ pub enum QueryMsg {
     Token2ForToken1Price {
         token2_amount: Uint128,
     },
+    GetFeeWallet {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

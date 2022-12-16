@@ -55,6 +55,9 @@ pub enum ExecuteMsg {
     Withdraw {
         amount: Uint128,
     },
+    ChangeFeeWallet {
+        address: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -68,6 +71,7 @@ pub enum QueryMsg {
         start_after: Option<String>,
         limit: Option<u32>,
     },
+    GetFeeWallet {},
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]

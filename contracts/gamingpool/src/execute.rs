@@ -2,30 +2,59 @@ use std::convert::TryFrom;
 use std::ops::{Add, Div, Mul};
 use std::str::FromStr;
 
-use cosmwasm_std::{Addr, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, QueryRequest, WasmQuery,
-                   from_binary, MessageInfo, Order, Response, StdError,
-                   StdResult, Storage, SubMsg, to_binary, Uint128, WasmMsg};
+use cosmwasm_std::{
+    from_binary, to_binary, Addr, BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, MessageInfo,
+    Order, QueryRequest, Response, StdError, StdResult, Storage, SubMsg, Uint128, WasmMsg,
+    WasmQuery,
+};
 
-use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, Denom};
-use cw20::Balance;
-use crate::contract::{CLAIMED_REFUND, CLAIMED_REWARD, DUMMY_WALLET, GAME_CANCELLED,
-                      GAME_COMPLETED, GAME_POOL_CLOSED, GAME_POOL_OPEN, HUNDRED_PERCENT,
-                      INITIAL_REFUND_AMOUNT, INITIAL_REWARD_AMOUNT, INITIAL_TEAM_POINTS,
-                      INITIAL_TEAM_RANK, NINETY_NINE_NINE_PERCENT, REWARDS_DISTRIBUTED,
-                      REWARDS_NOT_DISTRIBUTED, UNCLAIMED_REFUND, UNCLAIMED_REWARD};
-use crate::ContractError;
+use crate::contract::{
+    CLAIMED_REFUND, CLAIMED_REWARD, DUMMY_WALLET, GAME_CANCELLED, GAME_COMPLETED, GAME_POOL_CLOSED,
+    GAME_POOL_OPEN, HUNDRED_PERCENT, INITIAL_REFUND_AMOUNT, INITIAL_REWARD_AMOUNT,
+    INITIAL_TEAM_POINTS, INITIAL_TEAM_RANK, NINETY_NINE_NINE_PERCENT, REWARDS_DISTRIBUTED,
+    REWARDS_NOT_DISTRIBUTED, UNCLAIMED_REFUND, UNCLAIMED_REWARD,
+};
 use crate::msg::{BalanceResponse, ReceivedMsg};
-use crate::query::{get_team_count_for_user_in_pool_type,
-                   query_pool_details, query_pool_type_details, query_swap_data_for_pool};
-use crate::state::{CONFIG, CONTRACT_POOL_COUNT, CURRENT_REWARD_FOR_POOL, FeeDetails,
-                   GAME_DETAILS, GameDetails, GameResult, PLATFORM_WALLET_PERCENTAGES,
-                   POOL_DETAILS, POOL_TEAM_DETAILS, POOL_TYPE_DETAILS, PoolDetails, PoolTeamDetails,
-                   PoolTypeDetails, SWAP_BALANCE_INFO, SwapBalanceDetails,
-                   WalletPercentage, WalletTransferDetails};
-                
-use fanfuryswap::msg::{QueryMsg as FanfuryswapQueryMsg, ExecuteMsg as FanfuryswapExecuteMsg, Token1ForToken2PriceResponse, Token2ForToken1PriceResponse, ConfigResponse as FanfuryswapConfigResponse, TokenSelect};
+use crate::query::{
+    get_team_count_for_user_in_pool_type, query_pool_details, query_pool_type_details,
+    query_swap_data_for_pool,
+};
+use crate::state::{
+    FeeDetails, GameDetails, GameResult, PoolDetails, PoolTeamDetails, PoolTypeDetails,
+    SwapBalanceDetails, WalletPercentage, WalletTransferDetails, CONFIG, CONTRACT_POOL_COUNT,
+    CURRENT_REWARD_FOR_POOL, FEE_WALLET, GAME_DETAILS, PLATFORM_WALLET_PERCENTAGES, POOL_DETAILS,
+    POOL_TEAM_DETAILS, POOL_TYPE_DETAILS, SWAP_BALANCE_INFO,
+};
+use crate::ContractError;
+use cw20::Balance;
+use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, Denom};
+
 use crate::util;
 use crate::util::{NORMAL_DECIMAL, THOUSAND};
+use fanfuryswap::msg::{
+    ConfigResponse as FanfuryswapConfigResponse, ExecuteMsg as FanfuryswapExecuteMsg,
+    QueryMsg as FanfuryswapQueryMsg, Token1ForToken2PriceResponse, Token2ForToken1PriceResponse,
+    TokenSelect,
+};
+
+pub fn change_fee_wallet(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    if config.admin_address != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    deps.api.addr_validate(&address.clone())?;
+
+    FEE_WALLET.save(deps.storage, &address)?;
+    Ok(Response::new()
+        .add_attribute("action", "change_fee_wallet")
+        .add_attribute("fee_wallet", address))
+}
 
 pub fn set_platform_fee_wallets(
     deps: DepsMut,
@@ -332,12 +361,16 @@ pub fn query_platform_fees(
     transaction_fee_percentage: Uint128,
 ) -> StdResult<FeeDetails> {
     return Ok(FeeDetails {
-        platform_fee: Uint128::from(pool_fee
-            .checked_mul(platform_fees_percentage)?
-            .checked_div(Uint128::from(HUNDRED_PERCENT))?),
-        transaction_fee: Uint128::from(pool_fee
-            .checked_mul(transaction_fee_percentage)?
-            .checked_div(Uint128::from(HUNDRED_PERCENT))?),
+        platform_fee: Uint128::from(
+            pool_fee
+                .checked_mul(platform_fees_percentage)?
+                .checked_div(Uint128::from(HUNDRED_PERCENT))?,
+        ),
+        transaction_fee: Uint128::from(
+            pool_fee
+                .checked_mul(transaction_fee_percentage)?
+                .checked_div(Uint128::from(HUNDRED_PERCENT))?,
+        ),
     });
 }
 
@@ -419,31 +452,29 @@ pub fn game_pool_bid_submit(
         }
 
         let balance = Balance::from(info.funds);
-        let usdc_amount = util::get_amount_of_denom(balance, Denom::Native(config.usdc_ibc_symbol.clone()))?;
+        let usdc_amount =
+            util::get_amount_of_denom(balance, Denom::Native(config.usdc_ibc_symbol.clone()))?;
         if usdc_amount < required_platform_fee_ust + transaction_fee {
             return Err(ContractError::InsufficientFeesUst {});
         }
     }
 
-
     let mut pool_fee: Uint128 = pool_type_details.pool_fee;
     if !testing {
-
-        
-        let pool_fee_response: Token1ForToken2PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: config.clone().pool_address.to_string(),
-            msg: to_binary(&FanfuryswapQueryMsg::Token1ForToken2Price {
-                token1_amount: pool_type_details.pool_fee
-            })?,
-        }))?;
+        let pool_fee_response: Token1ForToken2PriceResponse =
+            deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+                contract_addr: config.clone().pool_address.to_string(),
+                msg: to_binary(&FanfuryswapQueryMsg::Token1ForToken2Price {
+                    token1_amount: pool_type_details.pool_fee,
+                })?,
+            }))?;
 
         pool_fee = pool_fee_response.token2_amount;
     }
     let max_teams_for_pool = pool_type_details.max_teams_for_pool;
     let max_teams_for_gamer = pool_type_details.max_teams_for_gamer;
-    let amount_required = pool_fee
-        * (Uint128::from(NINETY_NINE_NINE_PERCENT))
-        / (Uint128::from(HUNDRED_PERCENT));
+    let amount_required =
+        pool_fee * (Uint128::from(NINETY_NINE_NINE_PERCENT)) / (Uint128::from(HUNDRED_PERCENT));
     if amount < amount_required {
         return Err(ContractError::Std(StdError::GenericErr {
             msg: String::from("Amount being bid does not match the pool fee and the platform fee"),
@@ -524,7 +555,6 @@ pub fn game_pool_bid_submit(
     };
     messages.push(CosmosMsg::Wasm(exec));
 
-
     let increase_allowance_msg = Cw20ExecuteMsg::IncreaseAllowance {
         spender: String::from(config.clone().pool_address),
         amount,
@@ -535,7 +565,7 @@ pub fn game_pool_bid_submit(
         msg: to_binary(&increase_allowance_msg).unwrap(),
         funds: vec![],
     }));
-    
+
     //Swap FURY to USDC
     // let fury_asset_info = Asset {
     //     info: AssetInfo::Token {
@@ -563,29 +593,33 @@ pub fn game_pool_bid_submit(
     //         amount: platform_fees_for_swap,
     //     }],
     // }));
-    let swap_config_response: FanfuryswapConfigResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.clone().pool_address.to_string(),
-        msg: to_binary(&FanfuryswapQueryMsg::Config {  } )?,
-    }))?;
+    let swap_config_response: FanfuryswapConfigResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Config {})?,
+        }))?;
 
-    let expected_usdc_response: Token2ForToken1PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.clone().pool_address.to_string(),
-        msg: to_binary(&FanfuryswapQueryMsg::Token2ForToken1Price { 
-            token2_amount: amount
-        } )?,
-    }))?;
+    let expected_usdc_response: Token2ForToken1PriceResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Token2ForToken1Price {
+                token2_amount: amount,
+            })?,
+        }))?;
 
-    let platform_fees_for_swap = expected_usdc_response.token1_amount * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee) / Uint128::from(THOUSAND);
+    let platform_fees_for_swap = expected_usdc_response.token1_amount
+        * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee)
+        / Uint128::from(THOUSAND);
 
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
         contract_addr: config.clone().pool_address.to_string(),
         msg: to_binary(&FanfuryswapExecuteMsg::Swap {
-                input_token: TokenSelect::Token2,
-                input_amount: amount,
-                min_output: expected_usdc_response.token1_amount,
-                fee_amount: platform_fees_for_swap,
-                expiration: None
-            })?,
+            input_token: TokenSelect::Token2,
+            input_amount: amount,
+            min_output: expected_usdc_response.token1_amount,
+            fee_amount: platform_fees_for_swap,
+            expiration: None,
+        })?,
         funds: vec![Coin {
             denom: config.usdc_ibc_symbol.clone(),
             amount: platform_fees_for_swap,
@@ -613,7 +647,8 @@ pub fn save_team_details(
 ) -> Result<Response, ContractError> {
     // Get the existing teams for this pool
     let mut teams = Vec::new();
-    let all_teams = POOL_TEAM_DETAILS.may_load(storage, (&pool_id.clone(), gamer.clone().as_ref()))?;
+    let all_teams =
+        POOL_TEAM_DETAILS.may_load(storage, (&pool_id.clone(), gamer.clone().as_ref()))?;
     match all_teams {
         Some(some_teams) => {
             teams = some_teams;
@@ -668,7 +703,9 @@ pub fn claim_reward(
         let mut pool_details: PoolDetails = Default::default();
         let pd = POOL_DETAILS.load(deps.storage, pool_id.clone());
         match pd {
-            Ok(some) => { pool_details = some; }
+            Ok(some) => {
+                pool_details = some;
+            }
             Err(_) => {
                 continue;
             }
@@ -678,7 +715,9 @@ pub fn claim_reward(
         }
         let mut pool_team_details;
         match POOL_TEAM_DETAILS.load(deps.storage, (&*pool_id.clone(), &gamer.clone())) {
-            Ok(some) => { pool_team_details = some; }
+            Ok(some) => {
+                pool_team_details = some;
+            }
             Err(_) => {
                 continue;
             }
@@ -714,31 +753,39 @@ pub fn claim_reward(
     //         fury_count: user_reward,
     //     },
     // )?;
-    let expected_usdc_response: Token2ForToken1PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.clone().pool_address.to_string(),
-        msg: to_binary(&FanfuryswapQueryMsg::Token2ForToken1Price { 
-            token2_amount: user_reward
-        } )?,
-    }))?;
+    let expected_usdc_response: Token2ForToken1PriceResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Token2ForToken1Price {
+                token2_amount: user_reward,
+            })?,
+        }))?;
     let user_reward_in_ust = expected_usdc_response.token1_amount;
-    let fee_details = query_platform_fees(user_reward_in_ust, config.platform_fee, config.transaction_fee)?;
+    let fee_details = query_platform_fees(
+        user_reward_in_ust,
+        config.platform_fee,
+        config.transaction_fee,
+    )?;
     // We only take the first coin object since we only expect UST here
     let funds_sent;
     if info.funds.len() != 0 {
         funds_sent = info.funds[0].clone();
-        if (funds_sent.denom != uusd(&deps)?) || (funds_sent.amount < fee_details.platform_fee.add(fee_details.transaction_fee)) {
+        if (funds_sent.denom != uusd(&deps)?)
+            || (funds_sent.amount < fee_details.platform_fee.add(fee_details.transaction_fee))
+        {
             return Err(ContractError::InsufficientFeesUst {});
         }
     } else {
         return Err(ContractError::InsufficientFeesUst {});
     }
 
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let r = CosmosMsg::Bank(BankMsg::Send {
-        to_address: config.platform_fees_collector_wallet.to_string(),
+        to_address: fee_wallet,
         amount: info.funds,
     });
     messages.push(r);
-
 
     let transfer_msg = Cw20ExecuteMsg::Transfer {
         recipient: info.sender.into_string(),
@@ -752,8 +799,7 @@ pub fn claim_reward(
     return Ok(Response::new()
         .add_attribute("amount", user_reward.to_string())
         .add_attribute("action", "reward")
-        .add_messages(messages)
-    );
+        .add_messages(messages));
 }
 
 // Refund: Pool fee is in UST but has to be given back in FURY,
@@ -792,7 +838,9 @@ pub fn claim_refund(
         let mut pool_details: PoolDetails = Default::default();
         let pd = POOL_DETAILS.load(deps.storage, pool_id.clone());
         match pd {
-            Ok(some) => { pool_details = some; }
+            Ok(some) => {
+                pool_details = some;
+            }
             Err(_) => {
                 continue;
             }
@@ -802,7 +850,8 @@ pub fn claim_refund(
         }
         let pool_type = POOL_TYPE_DETAILS.load(deps.storage, pool_details.pool_type)?;
         let refund_amount = pool_type.pool_fee;
-        let pool_team_details = POOL_TEAM_DETAILS.load(deps.storage, (pool_id.as_ref(), &gamer.clone()));
+        let pool_team_details =
+            POOL_TEAM_DETAILS.load(deps.storage, (pool_id.as_ref(), &gamer.clone()));
         match pool_team_details {
             Ok(some) => {
                 let mut updated_details = Vec::new();
@@ -818,23 +867,30 @@ pub fn claim_refund(
                     }
                 }
                 if !updated_details.is_empty() {
-                    POOL_TEAM_DETAILS.save(deps.storage, (pool_id.as_ref(), &gamer.clone()), &updated_details)?
+                    POOL_TEAM_DETAILS.save(
+                        deps.storage,
+                        (pool_id.as_ref(), &gamer.clone()),
+                        &updated_details,
+                    )?
                 }
             }
-            Err(_) => {
-                continue
-            }
+            Err(_) => continue,
         }
     }
-
 
     if total_refund_amount == Uint128::zero() {
         return Err(ContractError::Std(StdError::GenericErr {
             msg: String::from("No refund for this user"),
         }));
     }
-    let refund_details = query_platform_fees(total_refund_amount, config.platform_fee, config.transaction_fee)?;
-    refund_in_ust_fees = refund_details.transaction_fee.add(refund_details.platform_fee);
+    let refund_details = query_platform_fees(
+        total_refund_amount,
+        config.platform_fee,
+        config.transaction_fee,
+    )?;
+    refund_in_ust_fees = refund_details
+        .transaction_fee
+        .add(refund_details.platform_fee);
     // Do the transfer of refund to the actual gamer_addr from the contract
     let mut messages = Vec::new();
     // let ust_asset = Asset {
@@ -852,8 +908,6 @@ pub fn claim_refund(
     //     to: Option::from(info.sender.to_string()),
     // };
 
-
-
     let mut swap_fee = Uint128::zero();
     // Swap fee should be platform+transaction fee for the transaction
     if !testing_status {
@@ -864,20 +918,23 @@ pub fn claim_refund(
         //     },
         // )?;
 
-        let swap_config_response: FanfuryswapConfigResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: config.clone().pool_address.to_string(),
-            msg: to_binary(&FanfuryswapQueryMsg::Config {  } )?,
-        }))?;
-    
-        swap_fee = total_refund_amount * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee) / Uint128::from(THOUSAND);
-    
+        let swap_config_response: FanfuryswapConfigResponse =
+            deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+                contract_addr: config.clone().pool_address.to_string(),
+                msg: to_binary(&FanfuryswapQueryMsg::Config {})?,
+            }))?;
+
+        swap_fee = total_refund_amount
+            * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee)
+            / Uint128::from(THOUSAND);
     }
-    let expected_fury_response: Token1ForToken2PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.clone().pool_address.to_string(),
-        msg: to_binary(&FanfuryswapQueryMsg::Token1ForToken2Price { 
-            token1_amount: total_refund_amount
-        } )?,
-    }))?;
+    let expected_fury_response: Token1ForToken2PriceResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Token1ForToken2Price {
+                token1_amount: total_refund_amount,
+            })?,
+        }))?;
     //let final_amount = ust_asset.amount.clone().add(swap_fee).add(tax);
     let final_amount = total_refund_amount.add(swap_fee);
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
@@ -887,7 +944,7 @@ pub fn claim_refund(
             input_amount: total_refund_amount,
             min_output: expected_fury_response.token2_amount,
             fee_amount: swap_fee,
-            expiration: None
+            expiration: None,
         })?,
         funds: vec![Coin {
             denom: config.usdc_ibc_symbol.clone(),
@@ -907,8 +964,7 @@ pub fn claim_refund(
     return Ok(Response::new()
         .add_attribute("amount", final_amount.to_string())
         .add_attribute("action", "refund")
-        .add_messages(messages)
-    );
+        .add_messages(messages));
 }
 
 pub fn game_pool_reward_distribute(
@@ -987,7 +1043,6 @@ pub fn game_pool_reward_distribute(
     let pool_count = pool_details.current_teams_count;
     let pool_type = pool_details.pool_type;
 
-
     POOL_DETAILS.save(
         deps.storage,
         pool_id.clone(),
@@ -1014,10 +1069,14 @@ pub fn game_pool_reward_distribute(
             }));
         }
     }
-    platform_fee = query_platform_fees(pool_type_details.pool_fee, platform_fee_in_percentage, config.transaction_fee.clone())?.platform_fee;
+    platform_fee = query_platform_fees(
+        pool_type_details.pool_fee,
+        platform_fee_in_percentage,
+        config.transaction_fee.clone(),
+    )?
+    .platform_fee;
 
     let pool_fee: Uint128 = pool_type_details.pool_fee;
-
 
     let mut winner_rewards = Uint128::zero();
     let winners = game_winners.clone();
@@ -1030,7 +1089,10 @@ pub fn game_pool_reward_distribute(
     let mut reward_given_so_far = Uint128::zero();
     let mut all_teams: Vec<PoolTeamDetails> = Vec::new();
     for winner in game_winners.clone().into_iter() {
-        let ptd = POOL_TEAM_DETAILS.may_load(deps.storage, (&pool_id.clone(), winner.gamer_address.as_ref()))?;
+        let ptd = POOL_TEAM_DETAILS.may_load(
+            deps.storage,
+            (&pool_id.clone(), winner.gamer_address.as_ref()),
+        )?;
         match ptd {
             Some(ptd) => {
                 all_teams = ptd;
@@ -1060,7 +1122,11 @@ pub fn game_pool_reward_distribute(
             }
             updated_teams.push(updated_team);
         }
-        POOL_TEAM_DETAILS.save(deps.storage, (&pool_id.clone(), winner.gamer_address.as_ref()), &updated_teams)?;
+        POOL_TEAM_DETAILS.save(
+            deps.storage,
+            (&pool_id.clone(), winner.gamer_address.as_ref()),
+            &updated_teams,
+        )?;
     }
     let current_reward = CURRENT_REWARD_FOR_POOL.load(deps.storage, pool_id.clone());
     let reward_total;
@@ -1159,7 +1225,10 @@ pub fn swap(
     let pool_details = query_pool_details(deps.storage, pool_id.clone())?;
     let pool_type_details = POOL_TYPE_DETAILS.load(deps.storage, pool_details.pool_type.clone())?;
     // This is the total funds we have in the pool as UST
-    let total_collection_in_pool = pool_type_details.pool_fee.checked_mul(Uint128::from(pool_details.current_teams_count)).unwrap_or_default();
+    let total_collection_in_pool = pool_type_details
+        .pool_fee
+        .checked_mul(Uint128::from(pool_details.current_teams_count))
+        .unwrap_or_default();
     //  We need the amount to be less else there is no funds left for rake
     let funds_for_rake;
     if amount >= total_collection_in_pool {
@@ -1170,7 +1239,7 @@ pub fn swap(
     let current_fury_balance: BalanceResponse = deps.querier.query_wasm_smart(
         config.clone().fury_token_address,
         &Cw20QueryMsg::Balance {
-            address: env.contract.address.clone().to_string()
+            address: env.contract.address.clone().to_string(),
         },
     )?;
     let mut swap_info;
@@ -1214,22 +1283,26 @@ pub fn swap(
     //     },
     // )?;
 
-    let swap_config_response: FanfuryswapConfigResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.clone().pool_address.to_string(),
-        msg: to_binary(&FanfuryswapQueryMsg::Config {  } )?,
-    }))?;
+    let swap_config_response: FanfuryswapConfigResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Config {})?,
+        }))?;
 
-    let swap_fee = amount * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee) / Uint128::from(THOUSAND);
+    let swap_fee = amount
+        * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee)
+        / Uint128::from(THOUSAND);
 
     //let final_amount = ust_asset.amount.clone().add(swap_fee).add(tax);
     let final_amount = amount.add(swap_fee);
 
-    let expected_fury_response: Token1ForToken2PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: config.clone().pool_address.to_string(),
-        msg: to_binary(&FanfuryswapQueryMsg::Token1ForToken2Price { 
-            token1_amount: amount
-        } )?,
-    }))?;
+    let expected_fury_response: Token1ForToken2PriceResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Token1ForToken2Price {
+                token1_amount: amount,
+            })?,
+        }))?;
 
     let submsg = SubMsg::reply_on_success(
         CosmosMsg::Wasm(WasmMsg::Execute {
@@ -1239,7 +1312,7 @@ pub fn swap(
                 input_amount: amount,
                 min_output: expected_fury_response.token2_amount,
                 fee_amount: swap_fee,
-                expiration: None
+                expiration: None,
             })?,
             funds: vec![Coin {
                 denom: config.usdc_ibc_symbol.clone(),
@@ -1248,20 +1321,29 @@ pub fn swap(
         }),
         pool_id.parse::<u64>().unwrap(),
     );
-    return Ok(Response::new().add_submessage(submsg).add_attribute("fury_balance_pre_swap", current_fury_balance.balance.to_string()));
+    return Ok(Response::new().add_submessage(submsg).add_attribute(
+        "fury_balance_pre_swap",
+        current_fury_balance.balance.to_string(),
+    ));
 }
 
 pub fn execute_sweep(
     deps: DepsMut,
     info: MessageInfo,
-    funds_to_send: Vec<Coin>) -> Result<Response, ContractError> {
+    funds_to_send: Vec<Coin>,
+) -> Result<Response, ContractError> {
     let state = CONFIG.load(deps.storage)?;
 
     if info.sender != state.admin_address {
-        return Err(ContractError::UnauthorizedInvoker { invoker: info.sender.clone().to_string() });
+        return Err(ContractError::UnauthorizedInvoker {
+            invoker: info.sender.clone().to_string(),
+        });
     }
+
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let r = CosmosMsg::Bank(BankMsg::Send {
-        to_address: state.platform_fees_collector_wallet.to_string(),
+        to_address: fee_wallet,
         amount: funds_to_send,
     });
     Ok(Response::new()
@@ -1269,10 +1351,7 @@ pub fn execute_sweep(
         .add_attribute("action", "execute_sweep"))
 }
 
-pub fn uusd(
-    deps: &DepsMut,
-) -> Result<String, ContractError> {
+pub fn uusd(deps: &DepsMut) -> Result<String, ContractError> {
     let config = CONFIG.load(deps.storage)?;
-    return Ok(config.usdc_ibc_symbol)
+    return Ok(config.usdc_ibc_symbol);
 }
-

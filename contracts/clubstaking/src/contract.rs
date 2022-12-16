@@ -15,8 +15,8 @@ use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, ReceivedMsg};
 use crate::state::{
     ClubBondingDetails, ClubOwnershipDetails, ClubPreviousOwnerDetails, ClubStakingDetails, Config,
     WinningClubDetails, CLUB_BONDING_DETAILS, CLUB_OWNERSHIP_DETAILS, CLUB_PREVIOUS_OWNER_DETAILS,
-    CLUB_REWARD_NEXT_TIMESTAMP, CLUB_STAKING_DETAILS, CLUB_STAKING_SNAPSHOT, CONFIG, REWARD,
-    REWARD_GIVEN_IN_CURRENT_TIMESTAMP, WINNING_CLUB_DETAILS_SNAPSHOT,
+    CLUB_REWARD_NEXT_TIMESTAMP, CLUB_STAKING_DETAILS, CLUB_STAKING_SNAPSHOT, CONFIG, FEE_WALLET,
+    REWARD, REWARD_GIVEN_IN_CURRENT_TIMESTAMP, WINNING_CLUB_DETAILS_SNAPSHOT,
 };
 use wasmswap::msg::{
     QueryMsg as WasmswapQueryMsg, Token1ForToken2PriceResponse, Token2ForToken1PriceResponse,
@@ -174,6 +174,7 @@ pub fn execute(
             amount,
         } => increase_reward_amount(deps, env, info, reward_from, amount),
         ExecuteMsg::ChangeConfig { config } => change_config(deps, env, info, config),
+        ExecuteMsg::ChangeFeeWallet { address } => change_fee_wallet(deps, env, info, address),
     }
 }
 
@@ -217,6 +218,25 @@ fn change_config(
 
     CONFIG.save(deps.storage, &config)?;
     Ok(Response::new().add_attribute("action", "change_config"))
+}
+
+fn change_fee_wallet(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    if config.admin_address != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    deps.api.addr_validate(&address.clone())?;
+
+    FEE_WALLET.save(deps.storage, &address)?;
+    Ok(Response::new()
+        .add_attribute("action", "change_fee_wallet")
+        .add_attribute("fee_wallet", address))
 }
 
 fn claim_previous_owner_rewards(
@@ -388,15 +408,15 @@ fn buy_a_club(
         }));
     }
 
-    let required_juno_fees: Uint128;
+    let required_ust_fees: Uint128;
     //To bypass calls from unit tests
     if info.sender.clone().into_string() == String::from("owner001")
         || info.sender.clone().into_string() == String::from("owner002")
         || info.sender.clone().into_string() == String::from("owner003")
     {
-        required_juno_fees = Uint128::zero();
+        required_ust_fees = Uint128::zero();
     } else {
-        required_juno_fees = query_platform_fees(
+        required_ust_fees = query_platform_fees(
             deps.as_ref(),
             to_binary(&ExecuteMsg::BuyAClub {
                 buyer: buyer.clone(),
@@ -408,15 +428,15 @@ fn buy_a_club(
     }
     let mut fees = Uint128::zero();
     for fund in info.funds.clone() {
-        if fund.denom == "ujuno".to_string() {
+        if fund.denom == uusd(&deps)? {
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_juno_fees = required_juno_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
-    if fees < adjusted_juno_fees {
+    if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
-            required: required_juno_fees,
+            required: required_ust_fees,
             received: fees,
         });
     }
@@ -553,9 +573,11 @@ fn buy_a_club(
         )?;
     }
 
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let transfer_msg = Cw20ExecuteMsg::TransferFrom {
         owner: info.sender.into_string(),
-        recipient: config.club_fee_collector_wallet.to_string(),
+        recipient: fee_wallet,
         amount: price,
     };
     let exec = WasmMsg::Execute {
@@ -564,9 +586,11 @@ fn buy_a_club(
         funds: vec![],
     };
 
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let send_wasm: CosmosMsg = CosmosMsg::Wasm(exec);
     let send_bank: CosmosMsg = CosmosMsg::Bank(BankMsg::Send {
-        to_address: config.platform_fees_collector_wallet.into_string(),
+        to_address: fee_wallet,
         amount: info.funds,
     });
     let data_msg = format!("Club fees {} received", price).into_bytes();
@@ -817,7 +841,7 @@ fn stake_on_a_club(
     let staker_addr = deps.api.addr_validate(&staker)?;
     let contract_address = env.clone().contract.address.into_string();
 
-    let required_juno_fees: Uint128;
+    let required_ust_fees: Uint128;
     //To bypass calls from unit tests
     if info.sender.clone().into_string() == String::from("staker001")
         || info.sender.clone().into_string() == String::from("staker002")
@@ -826,9 +850,9 @@ fn stake_on_a_club(
         || info.sender.clone().into_string() == String::from("staker005")
         || info.sender.clone().into_string() == String::from("staker006")
     {
-        required_juno_fees = Uint128::zero();
+        required_ust_fees = Uint128::zero();
     } else {
-        required_juno_fees = query_platform_fees(
+        required_ust_fees = query_platform_fees(
             deps.as_ref(),
             to_binary(&ExecuteMsg::StakeOnAClub {
                 staker: staker.clone(),
@@ -840,15 +864,15 @@ fn stake_on_a_club(
     }
     let mut fees = Uint128::zero();
     for fund in info.funds.clone() {
-        if fund.denom == "ujuno".to_string() {
+        if fund.denom == uusd(&deps)? {
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_juno_fees = required_juno_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
-    if fees < adjusted_juno_fees {
+    if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
-            required: required_juno_fees,
+            required: required_ust_fees,
             received: fees,
         });
     }
@@ -894,9 +918,11 @@ fn stake_on_a_club(
         funds: vec![],
     };
 
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let send_wasm: CosmosMsg = CosmosMsg::Wasm(exec);
     let send_bank: CosmosMsg = CosmosMsg::Bank(BankMsg::Send {
-        to_address: config.platform_fees_collector_wallet.into_string(),
+        to_address: fee_wallet,
         amount: info.funds,
     });
     let data_msg = format!("Club stake {} received", amount).into_bytes();
@@ -1019,7 +1045,7 @@ fn withdraw_stake_from_a_club(
         }
     }
 
-    let required_juno_fees: Uint128;
+    let required_ust_fees: Uint128;
     //To bypass calls from unit tests
     if info.sender.clone().into_string() == String::from("staker001")
         || info.sender.clone().into_string() == String::from("staker002")
@@ -1028,9 +1054,9 @@ fn withdraw_stake_from_a_club(
         || info.sender.clone().into_string() == String::from("staker005")
         || info.sender.clone().into_string() == String::from("staker006")
     {
-        required_juno_fees = Uint128::zero();
+        required_ust_fees = Uint128::zero();
     } else {
-        required_juno_fees = query_platform_fees(
+        required_ust_fees = query_platform_fees(
             deps.as_ref(),
             to_binary(&ExecuteMsg::StakeWithdrawFromAClub {
                 staker: staker.clone(),
@@ -1042,15 +1068,15 @@ fn withdraw_stake_from_a_club(
     }
     let mut fees = Uint128::zero();
     for fund in info.funds.clone() {
-        if fund.denom == "ujuno".to_string() {
+        if fund.denom == uusd(&deps)? {
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_juno_fees = required_juno_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
-    if fees < adjusted_juno_fees {
+    if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
-            required: required_juno_fees,
+            required: required_ust_fees,
             received: fees,
         });
     }
@@ -1244,9 +1270,11 @@ fn withdraw_stake_from_a_club(
                 config.bonding_duration,
             )?;
 
+            let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
             let mut rsp = Response::new();
             let send_bank: CosmosMsg = CosmosMsg::Bank(BankMsg::Send {
-                to_address: config.platform_fees_collector_wallet.into_string(),
+                to_address: fee_wallet,
                 amount: info.funds,
             });
 
@@ -1256,6 +1284,8 @@ fn withdraw_stake_from_a_club(
                 .add_message(send_bank)
                 .add_attribute("action", action)
                 .add_attribute("bonded", withdrawal_amount.clone().to_string())
+                .add_attribute("staker", staker)
+                .add_attribute("club_name", club_name)
                 .set_data(data_msg);
             return Ok(rsp);
         }
@@ -1297,9 +1327,12 @@ fn withdraw_stake_from_a_club(
         msg: to_binary(&transfer_msg).unwrap(),
         funds: vec![],
     };
+
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let send_wasm: CosmosMsg = CosmosMsg::Wasm(exec);
     let send_bank: CosmosMsg = CosmosMsg::Bank(BankMsg::Send {
-        to_address: config.platform_fees_collector_wallet.into_string(),
+        to_address: fee_wallet,
         amount: info.funds,
     });
 
@@ -1475,7 +1508,7 @@ fn claim_staker_rewards(
         return Err(ContractError::Unauthorized {});
     }
 
-    let required_juno_fees = query_platform_fees(
+    let required_ust_fees = query_platform_fees(
         deps.as_ref(),
         to_binary(&ExecuteMsg::ClaimStakerRewards {
             staker: staker.clone(),
@@ -1484,15 +1517,15 @@ fn claim_staker_rewards(
     )?;
     let mut fees = Uint128::zero();
     for fund in info.funds.clone() {
-        if fund.denom == "ujuno".to_string() {
+        if fund.denom == uusd(&deps)? {
             fees = fees.checked_add(fund.amount).unwrap();
         }
     }
-    let adjusted_juno_fees = required_juno_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
+    let adjusted_ust_fees = required_ust_fees * (Uint128::from(NINETY_NINE_NINE_PERCENT))
         / (Uint128::from(HUNDRED_PERCENT));
-    if fees < adjusted_juno_fees {
+    if fees < adjusted_ust_fees {
         return Err(ContractError::InsufficientFees {
-            required: required_juno_fees,
+            required: required_ust_fees,
             received: fees,
         });
     }
@@ -1544,9 +1577,12 @@ fn claim_staker_rewards(
         msg: to_binary(&transfer_msg).unwrap(),
         funds: vec![],
     };
+
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     let send_wasm: CosmosMsg = CosmosMsg::Wasm(exec);
     let send_bank: CosmosMsg = CosmosMsg::Bank(BankMsg::Send {
-        to_address: config.platform_fees_collector_wallet.into_string(),
+        to_address: fee_wallet,
         amount: info.funds,
     });
     let data_msg = format!("Amount {} transferred", amount).into_bytes();
@@ -2032,6 +2068,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_binary(&query_staker_rewards(deps, staker, club_name)?)
         }
         QueryMsg::Config {} => to_binary(&query_config(deps.storage)?),
+        QueryMsg::GetFeeWallet {} => to_binary(&query_get_fee_wallet(deps.storage)?),
     }
 }
 
@@ -2047,6 +2084,7 @@ pub fn query_platform_fees(deps: Deps, msg: Binary) -> StdResult<Uint128> {
             return Ok(Uint128::zero());
         }
         Ok(ExecuteMsg::ChangeConfig { config: _ }) => return Ok(Uint128::zero()),
+        Ok(ExecuteMsg::ChangeFeeWallet { address: _ }) => return Ok(Uint128::zero()),
         Ok(ExecuteMsg::BuyAClub {
             buyer: _,
             seller: _,
@@ -2215,6 +2253,11 @@ fn query_reward_amount(storage: &dyn Storage) -> StdResult<Uint128> {
 fn query_config(storage: &dyn Storage) -> StdResult<Config> {
     let config = CONFIG.load(storage)?;
     return Ok(config);
+}
+
+fn query_get_fee_wallet(storage: &dyn Storage) -> StdResult<String> {
+    let address = FEE_WALLET.load(storage)?;
+    return Ok(address);
 }
 
 fn query_staker_rewards(deps: Deps, staker: String, club_name: String) -> StdResult<Uint128> {

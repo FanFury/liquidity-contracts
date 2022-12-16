@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use cw20::{Cw20ReceiveMsg, Logo};
 
-use crate::ContractError;
 use crate::state::{GameResult, SwapBalanceDetails, WalletPercentage};
+use crate::ContractError;
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct InstantiateMarketingInfo {
@@ -24,7 +24,7 @@ pub struct InstantiateMsg {
     pub transaction_fee: Uint128,
     pub platform_fee: Uint128,
     pub game_id: String,
-    pub usdc_ibc_symbol:String,
+    pub usdc_ibc_symbol: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -34,7 +34,7 @@ pub struct MigrateMsg {}
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     SetPlatformFeeWallets {
-        wallet_percentages: Vec<WalletPercentage>
+        wallet_percentages: Vec<WalletPercentage>,
     },
     SetPoolTypeParams {
         pool_type: String,
@@ -47,10 +47,10 @@ pub enum ExecuteMsg {
     CancelGame {},
     LockGame {},
     CreatePool {
-        pool_type: String
+        pool_type: String,
     },
     ClaimReward {
-        gamer: String
+        gamer: String,
     },
     ClaimRefund {
         gamer: String,
@@ -62,7 +62,6 @@ pub enum ExecuteMsg {
         is_final_batch: bool,
         ust_for_rake: Uint128,
         game_id: String,
-
     },
     GamePoolBidSubmitCommand {
         gamer: String,
@@ -71,13 +70,17 @@ pub enum ExecuteMsg {
         team_id: String,
         amount: Uint128,
         max_spread: Option<Decimal>,
-
     },
-    Sweep { funds: Vec<Coin> },
+    Sweep {
+        funds: Vec<Coin>,
+    },
     Swap {
         amount: Uint128,
         pool_id: String,
         max_spread: Option<Decimal>,
+    },
+    ChangeFeeWallet {
+        address: String,
     },
 }
 
@@ -95,9 +98,11 @@ pub enum QueryMsg {
         pool_type: String,
     },
     AllPoolTypeDetails {},
-    AllTeams { users: Vec<String> },
+    AllTeams {
+        users: Vec<String>,
+    },
     QueryReward {
-        gamer: String
+        gamer: String,
     },
     QueryRefund {
         gamer: String,
@@ -123,13 +128,13 @@ pub enum QueryMsg {
         pool_type: String,
     },
     SwapInfo {
-        pool_id: String
+        pool_id: String,
     },
     GetTotalFees {
-        amount: Uint128
+        amount: Uint128,
     },
+    GetFeeWallet {},
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -144,8 +149,6 @@ pub struct GamePoolBidSubmitCommand {
     pub pool_id: String,
     pub team_id: String,
 }
-
-
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct BalanceResponse {

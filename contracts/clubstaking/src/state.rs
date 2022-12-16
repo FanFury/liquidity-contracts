@@ -150,6 +150,9 @@ pub const CLUB_REWARD_NEXT_TIMESTAMP: Item<Timestamp> = Item::new("club_reward_n
 /// Snapshot of ranking by stakes
 pub const CLUB_STAKING_SNAPSHOT: Map<String, Uint128> = Map::new("club_staking_snapshot");
 
+// fee wallet
+pub const FEE_WALLET: Item<String> = Item::new("config_new_fee_wallet");
+
 /// Snapshot of winning club details
 pub const WINNING_CLUB_DETAILS_SNAPSHOT: Item<WinningClubDetails> =
     Item::new("winning_club_details_snapshot");

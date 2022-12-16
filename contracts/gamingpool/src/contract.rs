@@ -2,23 +2,33 @@ use std::convert::TryFrom;
 use std::ops::{Div, Mul};
 use std::str::FromStr;
 
-use cosmwasm_std::{Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdResult, to_binary, Uint128};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::OverflowOperation::Add;
+use cosmwasm_std::{
+    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdResult, Uint128,
+};
 use schemars::_serde_json::ser::State;
 
-use cw20::Cw20QueryMsg;
 use cw2::set_contract_version;
+use cw20::Cw20QueryMsg;
 
 use crate::error::ContractError;
-use crate::execute::{cancel_game, claim_refund, claim_reward, create_pool, execute_sweep,
-                     game_pool_bid_submit, game_pool_reward_distribute, lock_game,
-                     save_team_details, set_platform_fee_wallets,
-                     set_pool_type_params, swap};
+use crate::execute::{
+    cancel_game, change_fee_wallet, claim_refund, claim_reward, create_pool, execute_sweep,
+    game_pool_bid_submit, game_pool_reward_distribute, lock_game, save_team_details,
+    set_platform_fee_wallets, set_pool_type_params, swap,
+};
 use crate::msg::{BalanceResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
-use crate::query::{get_team_count_for_user_in_pool_type, query_all_pool_type_details, query_all_pools_in_game, query_all_teams, query_game_details, query_game_result, query_pool_collection, query_pool_details, query_pool_team_details, query_pool_type_details, query_refund, query_reward, query_swap_data_for_pool, query_team_details, query_total_fees};
-use crate::state::{Config, CONFIG, GAME_DETAILS, GAME_RESULT_DUMMY, GameDetails, GameResult, SWAP_BALANCE_INFO};
+use crate::query::{
+    get_team_count_for_user_in_pool_type, query_all_pool_type_details, query_all_pools_in_game,
+    query_all_teams, query_game_details, query_game_result, query_get_fee_wallet,
+    query_pool_collection, query_pool_details, query_pool_team_details, query_pool_type_details,
+    query_refund, query_reward, query_swap_data_for_pool, query_team_details, query_total_fees,
+};
+use crate::state::{
+    Config, GameDetails, GameResult, CONFIG, GAME_DETAILS, GAME_RESULT_DUMMY, SWAP_BALANCE_INFO,
+};
 
 // This is a comment
 // version info for migration info
@@ -135,32 +145,45 @@ pub fn execute(
         ExecuteMsg::LockGame {} => lock_game(deps, env, info),
         ExecuteMsg::CreatePool { pool_type } => create_pool(deps, env, info, pool_type),
         ExecuteMsg::ClaimReward { gamer } => claim_reward(deps, info, gamer, env),
-        ExecuteMsg::ClaimRefund { gamer, max_spread } => claim_refund(deps, info, gamer, env, None, max_spread),
+        ExecuteMsg::ClaimRefund { gamer, max_spread } => {
+            claim_refund(deps, info, gamer, env, None, max_spread)
+        }
         ExecuteMsg::GamePoolRewardDistribute {
             pool_id,
             game_winners,
             is_final_batch,
             ust_for_rake,
             game_id,
-        } => game_pool_reward_distribute(deps, env, info, game_id, pool_id, game_winners, is_final_batch, false, ust_for_rake),
+        } => game_pool_reward_distribute(
+            deps,
+            env,
+            info,
+            game_id,
+            pool_id,
+            game_winners,
+            is_final_batch,
+            false,
+            ust_for_rake,
+        ),
         ExecuteMsg::GamePoolBidSubmitCommand {
             gamer,
             pool_type,
             pool_id,
             team_id,
             amount,
-            max_spread
+            max_spread,
         } => game_pool_bid_submit(
-            deps, env, info, gamer, pool_type, pool_id, team_id, amount, false, max_spread),
+            deps, env, info, gamer, pool_type, pool_id, team_id, amount, false, max_spread,
+        ),
         ExecuteMsg::Sweep { funds } => execute_sweep(deps, info, funds),
         ExecuteMsg::Swap {
             amount,
-            pool_id, max_spread
+            pool_id,
+            max_spread,
         } => swap(deps, env, info, amount, pool_id, max_spread),
+        ExecuteMsg::ChangeFeeWallet { address } => change_fee_wallet(deps, env, info, address),
     }
 }
-
-
 
 // This is the safe way of contract migration
 // We can add expose specific state properties to
@@ -189,9 +212,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             team_id,
         } => to_binary(&query_game_result(deps, gamer, pool_id, team_id)?),
         QueryMsg::GameDetails {} => to_binary(&query_game_details(deps.storage)?),
-        QueryMsg::PoolTeamDetailsWithTeamId { pool_id, team_id, gamer } => {
-            to_binary(&query_team_details(deps.storage, pool_id, team_id, gamer)?)
-        }
+        QueryMsg::PoolTeamDetailsWithTeamId {
+            pool_id,
+            team_id,
+            gamer,
+        } => to_binary(&query_team_details(deps.storage, pool_id, team_id, gamer)?),
         QueryMsg::AllPoolsInGame {} => to_binary(&query_all_pools_in_game(deps.storage)?),
         QueryMsg::PoolCollection { pool_id } => {
             to_binary(&query_pool_collection(deps.storage, pool_id)?)
@@ -206,21 +231,13 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             game_id,
             pool_type,
         )?),
-        QueryMsg::SwapInfo {
-            pool_id
-        } => to_binary(&query_swap_data_for_pool(
-            deps.storage,
-            pool_id,
-        )?),
-        QueryMsg::GetTotalFees {
-            amount
-        } => to_binary(&query_total_fees(
-            deps,
-            amount,
-        )?)
+        QueryMsg::SwapInfo { pool_id } => {
+            to_binary(&query_swap_data_for_pool(deps.storage, pool_id)?)
+        }
+        QueryMsg::GetTotalFees { amount } => to_binary(&query_total_fees(deps, amount)?),
+        QueryMsg::GetFeeWallet {} => to_binary(&query_get_fee_wallet(deps)?),
     }
 }
-
 
 #[allow(dead_code)]
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -230,7 +247,7 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
     let current_fury_balance: BalanceResponse = deps.querier.query_wasm_smart(
         config.clone().fury_token_address,
         &Cw20QueryMsg::Balance {
-            address: _env.contract.address.clone().to_string()
+            address: _env.contract.address.clone().to_string(),
         },
     )?;
     let mut balance_info = SWAP_BALANCE_INFO.load(deps.storage, pool_id.clone())?;
@@ -238,11 +255,17 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
     let balance_gained = balance_info.balance_post_swap - balance_info.balance_pre_swap;
     // ((Balance gained * 10_000) / Amount In UST Swapped)
     // (poolcollection * exchange rate)/10_000 at time of use
-    balance_info.exchange_rate = balance_gained.checked_mul(Uint128::from(10000u128)).unwrap().checked_div(balance_info.ust_amount_swapped).unwrap();
+    balance_info.exchange_rate = balance_gained
+        .checked_mul(Uint128::from(10000u128))
+        .unwrap()
+        .checked_div(balance_info.ust_amount_swapped)
+        .unwrap();
     SWAP_BALANCE_INFO.save(deps.storage, pool_id.clone(), &balance_info)?;
     return Ok(Response::default()
         .add_attribute("fury_balance_gained", balance_gained.to_string())
-        .add_attribute("exchange_rate_recieved", balance_info.exchange_rate.to_string())
-        .add_attribute("pool_id", pool_id)
-    );
+        .add_attribute(
+            "exchange_rate_recieved",
+            balance_info.exchange_rate.to_string(),
+        )
+        .add_attribute("pool_id", pool_id));
 }

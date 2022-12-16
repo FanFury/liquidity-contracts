@@ -108,6 +108,9 @@ pub enum ExecuteMsg {
     ChangeConfig {
         config: Config,
     },
+    ChangeFeeWallet {
+        address: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -153,6 +156,7 @@ pub enum QueryMsg {
         club_name: String,
     },
     Config {},
+    GetFeeWallet {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

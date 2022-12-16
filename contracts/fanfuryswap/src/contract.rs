@@ -1,3 +1,4 @@
+use crate::state::FEE_WALLET;
 use cosmwasm_std::{
     attr, entry_point, from_binary, to_binary, Addr, BankMsg, Binary, BlockInfo, Coin, CosmosMsg,
     Deps, DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg,
@@ -168,6 +169,7 @@ pub fn execute(
         ),
         ExecuteMsg::SendCoin { denom, amount } => execute_send_coin(deps, env, info, denom, amount),
         ExecuteMsg::TransferToken { amount } => execute_transfer_token(deps, env, info, amount),
+        ExecuteMsg::ChangeFeeWallet { address } => change_fee_wallet(deps, env, info, address),
     }
 }
 
@@ -194,6 +196,25 @@ pub fn execute_update_config(
         .add_attribute("action", "update_config")
         .add_attribute("owner", config.owner.to_string())
         .add_attribute("staking_address", config.bonding_code_id.to_string()))
+}
+
+pub fn change_fee_wallet(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    if config.owner != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    deps.api.addr_validate(&address.clone())?;
+
+    FEE_WALLET.save(deps.storage, &address)?;
+    Ok(Response::new()
+        .add_attribute("action", "change_fee_wallet")
+        .add_attribute("fee_wallet", address))
 }
 
 fn check_expiration(
@@ -345,10 +366,12 @@ pub fn execute_add_liquidity(
         return Err(ContractError::InsufficientFee {});
     }
 
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     transfer_msgs.push(util::transfer_token_message(
         token1.clone().denom.clone(),
         fee_amount,
-        config.treasury_address.clone(),
+        deps.api.addr_validate(&fee_wallet)?,
     )?);
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -878,11 +901,13 @@ pub fn execute_swap(
         }
     }
 
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
     // Create fee transfer message
     transfer_msgs.push(util::transfer_token_message(
         Denom::Native(cfg.usdc_denom),
         fee_amount,
-        cfg.treasury_address.clone(),
+        deps.api.addr_validate(&fee_wallet)?,
     )?);
 
     // Update token balances
@@ -989,7 +1014,13 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Token2ForToken1Price { token2_amount } => {
             to_binary(&query_token2_for_token1_price(deps, token2_amount)?)
         }
+        QueryMsg::GetFeeWallet {} => to_binary(&query_get_fee_wallet(deps)?),
     }
+}
+
+pub fn query_get_fee_wallet(deps: Deps) -> StdResult<String> {
+    let address = FEE_WALLET.load(deps.storage)?;
+    return Ok(address);
 }
 
 pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {

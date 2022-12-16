@@ -30,3 +30,4 @@ pub const CONFIG: Item<Config> = Item::new(CONFIG_KEY);
 
 pub const BONDING_KEY: &str = "bonding";
 pub const BONDING: Map<Addr, Vec<BondingRecord>> = Map::new(BONDING_KEY);
+pub const FEE_WALLET: Item<String> = Item::new("config-new-fee-wallet");

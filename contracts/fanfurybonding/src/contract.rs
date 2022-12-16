@@ -14,7 +14,7 @@ use cw20::Denom;
 use cw_storage_plus::Bound;
 use cw_utils::maybe_addr;
 
-use crate::state::{Config, BONDING, CONFIG};
+use crate::state::{Config, BONDING, CONFIG, FEE_WALLET};
 use crate::util;
 use crate::util::{NORMAL_DECIMAL, THOUSAND};
 use cw20::Balance;
@@ -89,6 +89,7 @@ pub fn execute(
         ExecuteMsg::LpBond { address, amount } => execute_lp_bond(deps, env, info, address, amount),
         ExecuteMsg::Unbond {} => execute_unbond(deps, env, info),
         ExecuteMsg::Withdraw { amount } => execute_withdraw(deps, env, info, amount),
+        ExecuteMsg::ChangeFeeWallet { address } => change_fee_wallet(deps, env, info, address),
     }
 }
 
@@ -106,6 +107,25 @@ pub fn check_owner(storage: &mut dyn Storage, address: Addr) -> Result<Response,
         return Err(ContractError::Disabled {});
     }
     Ok(Response::new().add_attribute("action", "check_owner"))
+}
+
+pub fn change_fee_wallet(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    address: String,
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    if config.owner != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    deps.api.addr_validate(&address.clone())?;
+
+    FEE_WALLET.save(deps.storage, &address)?;
+    Ok(Response::new()
+        .add_attribute("action", "change_fee_wallet")
+        .add_attribute("fee_wallet", address))
 }
 
 pub fn execute_update_owner(
@@ -272,8 +292,16 @@ pub fn execute_bond(
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(util::transfer_token_message(
         Denom::Native(cfg.usdc_denom.clone()),
-        usdc_amount,
+        usdc_amount - fee_amount,
         cfg.treasury_address.clone(),
+    )?);
+
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+
+    messages.push(util::transfer_token_message(
+        Denom::Native(cfg.usdc_denom.clone()),
+        fee_amount,
+        deps.api.addr_validate(&fee_wallet)?,
     )?);
 
     let mut list: Vec<BondingRecord> = BONDING
@@ -447,7 +475,13 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::AllBondState { start_after, limit } => {
             to_binary(&query_all_bond_state(deps, env, start_after, limit)?)
         }
+        QueryMsg::GetFeeWallet {} => to_binary(&query_get_fee_wallet(deps.storage)?),
     }
+}
+
+pub fn query_get_fee_wallet(storage: &dyn Storage) -> StdResult<String> {
+    let address = FEE_WALLET.load(storage)?;
+    return Ok(address);
 }
 
 pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
