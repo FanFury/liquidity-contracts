@@ -1142,7 +1142,7 @@ fn withdraw_stake_from_a_club(
             let mut updated_bonds = Vec::new();
 
             // PRE-MATURITY BOND are extracted here
-            // let mut bonded_bonds = Vec::new();
+            // let mut bonded_bonds = Vec::new();amount_remaining
 
             for bond in existing_bonds {
                 let mut updated_bond = bond.1.clone();
@@ -1156,13 +1156,22 @@ fn withdraw_stake_from_a_club(
                     {
                         if amount_remaining > Uint128::zero() {
                             if bond.1.bonded_amount > amount_remaining {
-                                unbonded_amount += amount_remaining;
-                                updated_bond.bonded_amount -= amount_remaining;
+                                unbonded_amount
+                                    .checked_add(amount_remaining)
+                                    .unwrap_or_default();
+                                updated_bond
+                                    .bonded_amount
+                                    .checked_sub(amount_remaining)
+                                    .unwrap_or_default();
                                 amount_remaining = Uint128::zero();
                                 updated_bonds.push(updated_bond);
                             } else {
-                                unbonded_amount += bond.1.bonded_amount;
-                                amount_remaining -= bond.1.bonded_amount;
+                                unbonded_amount
+                                    .checked_add(bond.1.bonded_amount)
+                                    .unwrap_or_default();
+                                amount_remaining
+                                    .checked_sub(bond.1.bonded_amount)
+                                    .unwrap_or_default();
                             }
                         } else {
                             updated_bonds.push(updated_bond);
@@ -1319,7 +1328,7 @@ fn withdraw_stake_from_a_club(
             .add_attribute("burnt", burn_amount.to_string());
     }
     let transfer_msg = Cw20ExecuteMsg::Transfer {
-        recipient: staker,
+        recipient: staker.clone(),
         amount: withdrawal_amount - burn_amount,
     };
     let exec = WasmMsg::Execute {
@@ -1341,7 +1350,9 @@ fn withdraw_stake_from_a_club(
         .add_message(send_wasm)
         .add_message(send_bank)
         .add_attribute("action", action)
-        .add_attribute("withdrawn", withdrawal_amount.clone().to_string())
+        .add_attribute("bonded", withdrawal_amount.clone().to_string())
+        .add_attribute("staker", staker)
+        .add_attribute("club_name", club_name)
         .set_data(data_msg);
     return Ok(rsp);
 }

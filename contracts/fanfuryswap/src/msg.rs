@@ -75,13 +75,6 @@ pub enum ExecuteMsg {
         min_token2: Uint128,
         expiration: Option<Expiration>,
     },
-    SendCoin {
-        denom: String,
-        amount: Uint128,
-    },
-    TransferToken {
-        amount: Uint128,
-    },
     ChangeFeeWallet {
         address: String,
     },

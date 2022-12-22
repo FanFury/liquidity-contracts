@@ -167,8 +167,7 @@ pub fn execute(
         } => execute_remove_liquidity_by_owner(
             deps, info, env, address, amount, min_token1, min_token2, expiration,
         ),
-        ExecuteMsg::SendCoin { denom, amount } => execute_send_coin(deps, env, info, denom, amount),
-        ExecuteMsg::TransferToken { amount } => execute_transfer_token(deps, env, info, amount),
+
         ExecuteMsg::ChangeFeeWallet { address } => change_fee_wallet(deps, env, info, address),
     }
 }
@@ -690,51 +689,6 @@ pub fn execute_remove_liquidity_by_owner(
         attr("token1_returned", token1_amount),
         attr("token2_returned", token2_amount),
     ]))
-}
-
-pub fn execute_send_coin(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    denom: String,
-    amount: Uint128,
-) -> Result<Response, ContractError> {
-    let config = CONFIG.load(deps.storage)?;
-
-    if config.owner != info.sender {
-        return Err(ContractError::Unauthorized {});
-    }
-
-    let message = CosmosMsg::Bank(BankMsg::Send {
-        to_address: info.sender.to_string(),
-        amount: vec![Coin { denom, amount }],
-    });
-
-    Ok(Response::new().add_message(message))
-}
-
-pub fn execute_transfer_token(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    amount: Uint128,
-) -> Result<Response, ContractError> {
-    let config = CONFIG.load(deps.storage)?;
-
-    if config.owner != info.sender {
-        return Err(ContractError::Unauthorized {});
-    }
-
-    let message = CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: config.fury_token_address.to_string(),
-        msg: to_binary(&Cw20ExecuteMsg::Transfer {
-            recipient: info.sender.to_string(),
-            amount,
-        })?,
-        funds: vec![],
-    });
-
-    Ok(Response::new().add_message(message))
 }
 
 fn get_burn_msg(contract: &Addr, owner: &Addr, amount: Uint128) -> StdResult<CosmosMsg> {
