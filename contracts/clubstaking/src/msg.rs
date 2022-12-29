@@ -111,6 +111,9 @@ pub enum ExecuteMsg {
     ChangeFeeWallet {
         address: String,
     },
+    // CreateNewClub{
+
+    // }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

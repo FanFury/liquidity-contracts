@@ -1,4 +1,8 @@
-use cosmwasm_std::{Deps, Order, StdError, StdResult, Storage, Uint128};
+use std::ops::Add;
+
+use cosmwasm_std::{
+    to_binary, Deps, Order, QueryRequest, StdError, StdResult, Storage, Uint128, WasmQuery,
+};
 
 use crate::contract::{
     DUMMY_WALLET, INITIAL_TEAM_POINTS, INITIAL_TEAM_RANK, UNCLAIMED_REFUND, UNCLAIMED_REWARD,
@@ -8,6 +12,11 @@ use crate::state::{
     FeeDetails, GameDetails, GameResult, PoolDetails, PoolTeamDetails, PoolTypeDetails,
     SwapBalanceDetails, CONFIG, FEE_WALLET, GAME_DETAILS, GAME_RESULT_DUMMY, POOL_DETAILS,
     POOL_TEAM_DETAILS, POOL_TYPE_DETAILS, SWAP_BALANCE_INFO,
+};
+use crate::util::THOUSAND;
+
+use fanfuryswap::msg::{
+    ConfigResponse as FanfuryswapConfigResponse, QueryMsg as FanfuryswapQueryMsg,
 };
 
 pub fn query_get_fee_wallet(deps: Deps) -> StdResult<String> {
@@ -110,16 +119,18 @@ pub fn query_reward(storage: &dyn Storage, gamer: String) -> StdResult<Uint128> 
     return Ok(user_reward);
 }
 
-pub fn query_refund(storage: &dyn Storage, gamer: String) -> StdResult<Uint128> {
+pub fn query_refund(deps: Deps, gamer: String) -> StdResult<Uint128> {
+    let config = CONFIG.load(deps.storage)?;
+
     let mut user_refund = Uint128::zero();
     // Get all pools
     let all_pools: Vec<String> = POOL_DETAILS
-        .keys(storage, None, None, Order::Ascending)
+        .keys(deps.storage, None, None, Order::Ascending)
         .map(|k| k.unwrap())
         .collect();
     for pool_id in all_pools {
         let mut pool_details: PoolDetails = Default::default();
-        let pd = POOL_DETAILS.load(storage, pool_id.clone());
+        let pd = POOL_DETAILS.load(deps.storage, pool_id.clone());
         match pd {
             Ok(some) => {
                 pool_details = some;
@@ -131,9 +142,10 @@ pub fn query_refund(storage: &dyn Storage, gamer: String) -> StdResult<Uint128> 
         if !pool_details.pool_refund_status {
             continue;
         }
-        let ptd = POOL_TYPE_DETAILS.load(storage, pool_details.pool_type)?;
+        let ptd = POOL_TYPE_DETAILS.load(deps.storage, pool_details.pool_type)?;
         let mut teams = Vec::new();
-        let all_teams = POOL_TEAM_DETAILS.may_load(storage, (&*pool_id.clone(), gamer.as_ref()))?;
+        let all_teams =
+            POOL_TEAM_DETAILS.may_load(deps.storage, (&*pool_id.clone(), gamer.as_ref()))?;
         match all_teams {
             Some(some_teams) => {
                 teams = some_teams;
@@ -146,7 +158,28 @@ pub fn query_refund(storage: &dyn Storage, gamer: String) -> StdResult<Uint128> 
             }
         }
     }
-    return Ok(user_refund);
+    let refund_details =
+        query_platform_fees(user_refund, config.platform_fee, config.transaction_fee)?;
+    let refund_in_ust_fees = refund_details
+        .transaction_fee
+        .add(refund_details.platform_fee);
+
+    let mut swap_fee = Uint128::zero();
+    let swap_config_response: FanfuryswapConfigResponse =
+        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+            contract_addr: config.clone().pool_address.to_string(),
+            msg: to_binary(&FanfuryswapQueryMsg::Config {})?,
+        }))?;
+
+    swap_fee = user_refund
+        * Uint128::from(swap_config_response.platform_fee + swap_config_response.tx_fee)
+        / Uint128::from(THOUSAND);
+
+    let final_amount = user_refund.add(swap_fee);
+
+    let result = final_amount + refund_in_ust_fees;
+
+    return Ok(result);
 }
 
 pub fn query_game_result(

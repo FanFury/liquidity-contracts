@@ -56,6 +56,25 @@ pub fn change_fee_wallet(
         .add_attribute("fee_wallet", address))
 }
 
+pub fn change_admin_wallet(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    admin: Addr,
+) -> Result<Response, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    if config.admin_address != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    config.admin_address = admin.clone();
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "change_admin")
+        .add_attribute("admin", admin))
+}
+
 pub fn set_platform_fee_wallets(
     deps: DepsMut,
     info: MessageInfo,
@@ -779,10 +798,8 @@ pub fn claim_reward(
         return Err(ContractError::InsufficientFeesUst {});
     }
 
-    let fee_wallet = FEE_WALLET.load(deps.storage)?;
-
     let r = CosmosMsg::Bank(BankMsg::Send {
-        to_address: fee_wallet,
+        to_address: config.platform_fees_collector_wallet.to_string(),
         amount: info.funds,
     });
     messages.push(r);
@@ -1340,10 +1357,8 @@ pub fn execute_sweep(
         });
     }
 
-    let fee_wallet = FEE_WALLET.load(deps.storage)?;
-
     let r = CosmosMsg::Bank(BankMsg::Send {
-        to_address: fee_wallet,
+        to_address: state.platform_fees_collector_wallet.to_string(),
         amount: funds_to_send,
     });
     Ok(Response::new()

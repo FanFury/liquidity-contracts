@@ -15,8 +15,8 @@ use cw20::Cw20QueryMsg;
 
 use crate::error::ContractError;
 use crate::execute::{
-    cancel_game, change_fee_wallet, claim_refund, claim_reward, create_pool, execute_sweep,
-    game_pool_bid_submit, game_pool_reward_distribute, lock_game, save_team_details,
+    cancel_game, change_admin_wallet, change_fee_wallet, claim_refund, claim_reward, create_pool,
+    execute_sweep, game_pool_bid_submit, game_pool_reward_distribute, lock_game, save_team_details,
     set_platform_fee_wallets, set_pool_type_params, swap,
 };
 use crate::msg::{BalanceResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
@@ -182,6 +182,7 @@ pub fn execute(
             max_spread,
         } => swap(deps, env, info, amount, pool_id, max_spread),
         ExecuteMsg::ChangeFeeWallet { address } => change_fee_wallet(deps, env, info, address),
+        ExecuteMsg::ChangeAdmin { admin } => change_admin_wallet(deps, env, info, admin),
     }
 }
 
@@ -205,7 +206,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::AllPoolTypeDetails {} => to_binary(&query_all_pool_type_details(deps.storage)?),
         QueryMsg::AllTeams { users } => to_binary(&query_all_teams(deps.storage, users)?),
         QueryMsg::QueryReward { gamer } => to_binary(&query_reward(deps.storage, gamer)?),
-        QueryMsg::QueryRefund { gamer } => to_binary(&query_refund(deps.storage, gamer)?),
+        QueryMsg::QueryRefund { gamer } => to_binary(&query_refund(deps, gamer)?),
         QueryMsg::QueryGameResult {
             gamer,
             pool_id,

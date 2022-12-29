@@ -82,6 +82,9 @@ pub enum ExecuteMsg {
     ChangeFeeWallet {
         address: String,
     },
+    ChangeAdmin {
+        admin: Addr,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
