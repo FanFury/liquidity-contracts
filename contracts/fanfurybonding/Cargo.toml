@@ -36,5 +36,3 @@ cosmwasm-schema = { version = "1.0.0" }
 cw-multi-test = {  version = "0.14.0" }
 serde_json = "1.0"
 #fanfuryswap = {version = "1.0.0", path = "../fanfuryswap", features = ["library"]}
-
-https://github.com/FanFury/liquidity-contracts.git
