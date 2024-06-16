@@ -146,7 +146,7 @@ pub fn execute_update_coin_denom(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    denom: Denom, // Replace with your specific type
+    denom: String, // Adjust the type as per your actual field type
 ) -> Result<Response, ContractError> {
     check_owner(deps.storage, info.sender)?;
 
