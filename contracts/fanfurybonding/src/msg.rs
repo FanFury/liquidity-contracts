@@ -1,7 +1,6 @@
 use std::ops::Add;
 
 use cosmwasm_std::{Addr, Uint128};
-use cw20::{Cw20ReceiveMsg, Denom};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -9,18 +8,14 @@ use serde::{Deserialize, Serialize};
 pub struct InstantiateMsg {
     pub owner: Addr,
     pub pool_address: Addr,
-
     pub treasury_address: Addr,
-    pub fury_token_address: Addr,
+    pub fury_token_denom: String,
     pub usdc_denom: String,
-
     pub lock_seconds: u64,
     pub discount: u64,
-
     pub tx_fee: u64,
     pub platform_fee: u64,
     pub daily_vesting_amount: Uint128,
-
     pub is_native_bonding: bool,
 }
 
@@ -46,10 +41,10 @@ pub enum ExecuteMsg {
     },
     Bond {
         amount: Uint128,
-    }, // For native bonding,
+    },
     LpBond {
         address: Addr,
-        amount: Uint128, // Only callable by pool
+        amount: Uint128,
     },
     Unbond {},
     Withdraw {
@@ -80,7 +75,7 @@ pub struct ConfigResponse {
     pub owner: Addr,
     pub pool_address: Addr,
     pub treasury_address: Addr,
-    pub fury_token_address: Addr,
+    pub fury_token_denom: String,
     pub lock_seconds: u64,
     pub discount: u64,
     pub usdc_denom: String,

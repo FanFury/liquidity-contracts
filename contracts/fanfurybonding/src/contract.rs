@@ -7,20 +7,19 @@ use crate::msg::{
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     attr, to_binary, Addr, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
-    QuerierWrapper, QueryRequest, Response, StdResult, Storage, Uint128, WasmQuery,
+    QuerierWrapper, QueryRequest, Response, StdResult, Storage, Uint128, WasmQuery, BankMsg, Coin,
 };
 use cw2::{get_contract_version, set_contract_version};
-use cw20::Denom;
 use cw_storage_plus::Bound;
 use cw_utils::maybe_addr;
 
 use crate::state::{Config, BONDING, CONFIG, FEE_WALLET};
 use crate::util;
 use crate::util::{NORMAL_DECIMAL, THOUSAND};
-use cw20::Balance;
 use wasmswap::msg::{
     QueryMsg as WasmswapQueryMsg, Token1ForToken2PriceResponse, Token2ForToken1PriceResponse,
 };
+
 // Version info, for migration info
 const CONTRACT_NAME: &str = "fanfurybonding";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -38,7 +37,7 @@ pub fn instantiate(
         owner: msg.owner,
         pool_address: msg.pool_address,
         treasury_address: msg.treasury_address,
-        fury_token_address: msg.fury_token_address,
+        fury_token_denom: msg.fury_token_denom,
         lock_seconds: msg.lock_seconds,
         discount: msg.discount,
         usdc_denom: msg.usdc_denom,
@@ -93,7 +92,7 @@ pub fn execute(
     }
 }
 
-pub fn check_enabled(storage: &mut dyn Storage) -> Result<Response, ContractError> {
+pub fn check_enabled(storage: &dyn Storage) -> Result<Response, ContractError> {
     let cfg = CONFIG.load(storage)?;
     if !cfg.enabled {
         return Err(ContractError::Disabled {});
@@ -101,10 +100,10 @@ pub fn check_enabled(storage: &mut dyn Storage) -> Result<Response, ContractErro
     Ok(Response::new().add_attribute("action", "check_enabled"))
 }
 
-pub fn check_owner(storage: &mut dyn Storage, address: Addr) -> Result<Response, ContractError> {
+pub fn check_owner(storage: &dyn Storage, address: Addr) -> Result<Response, ContractError> {
     let cfg = CONFIG.load(storage)?;
     if cfg.owner != address {
-        return Err(ContractError::Disabled {});
+        return Err(ContractError::Unauthorized {});
     }
     Ok(Response::new().add_attribute("action", "check_owner"))
 }
@@ -120,7 +119,7 @@ pub fn change_fee_wallet(
         return Err(ContractError::Unauthorized {});
     }
 
-    deps.api.addr_validate(&address.clone())?;
+    deps.api.addr_validate(&address)?;
 
     FEE_WALLET.save(deps.storage, &address)?;
     Ok(Response::new()
@@ -134,7 +133,7 @@ pub fn execute_update_owner(
     info: MessageInfo,
     owner: Addr,
 ) -> Result<Response, ContractError> {
-    check_owner(deps.storage, info.sender.clone())?;
+    check_owner(deps.storage, info.sender)?;
 
     let mut cfg = CONFIG.load(deps.storage)?;
 
@@ -142,9 +141,7 @@ pub fn execute_update_owner(
 
     CONFIG.save(deps.storage, &cfg)?;
 
-    return Ok(
-        Response::new().add_attributes(vec![attr("action", "update_owner"), attr("owner", owner)])
-    );
+    Ok(Response::new().add_attributes(vec![attr("action", "update_owner"), attr("owner", owner)]))
 }
 
 pub fn execute_update_coin_denom(
@@ -153,7 +150,7 @@ pub fn execute_update_coin_denom(
     info: MessageInfo,
     denom: String,
 ) -> Result<Response, ContractError> {
-    check_owner(deps.storage, info.sender.clone())?;
+    check_owner(deps.storage, info.sender)?;
 
     let mut cfg = CONFIG.load(deps.storage)?;
 
@@ -161,9 +158,7 @@ pub fn execute_update_coin_denom(
 
     CONFIG.save(deps.storage, &cfg)?;
 
-    return Ok(
-        Response::new().add_attributes(vec![attr("action", "update_denom"), attr("denom", denom)])
-    );
+    Ok(Response::new().add_attributes(vec![attr("action", "update_denom"), attr("denom", denom)]))
 }
 
 pub fn execute_update_enabled(
@@ -172,17 +167,15 @@ pub fn execute_update_enabled(
     info: MessageInfo,
     enabled: bool,
 ) -> Result<Response, ContractError> {
-    check_owner(deps.storage, info.sender.clone())?;
+    check_owner(deps.storage, info.sender)?;
 
     let mut cfg = CONFIG.load(deps.storage)?;
 
     cfg.enabled = enabled;
+
     CONFIG.save(deps.storage, &cfg)?;
 
-    return Ok(Response::new().add_attributes(vec![
-        attr("action", "update_enabled"),
-        attr("enabled", enabled.to_string()),
-    ]));
+    Ok(Response::new().add_attributes(vec![attr("action", "update_enabled"), attr("enabled", enabled.to_string())]))
 }
 
 pub fn execute_update_config(
@@ -196,57 +189,59 @@ pub fn execute_update_config(
     platform_fee: u64,
     daily_vesting_amount: Uint128,
 ) -> Result<Response, ContractError> {
-    check_owner(deps.storage, info.sender.clone())?;
+    check_owner(deps.storage, info.sender)?;
 
     let mut cfg = CONFIG.load(deps.storage)?;
+
     cfg.treasury_address = treasury_address.clone();
     cfg.lock_seconds = lock_seconds;
     cfg.discount = discount;
     cfg.tx_fee = tx_fee;
     cfg.platform_fee = platform_fee;
-    if cfg.daily_vesting_amount != daily_vesting_amount {
-        cfg.daily_vesting_amount = daily_vesting_amount;
-        //cfg.cumulated_amount = Uint128::zero();
-    }
+    cfg.daily_vesting_amount = daily_vesting_amount;
 
     CONFIG.save(deps.storage, &cfg)?;
 
-    return Ok(Response::new().add_attributes(vec![
+    Ok(Response::new().add_attributes(vec![
         attr("action", "update_config"),
-        attr("treasury_address", treasury_address.clone()),
+        attr("treasury_address", treasury_address.to_string()),
         attr("lock_seconds", lock_seconds.to_string()),
         attr("discount", discount.to_string()),
         attr("tx_fee", tx_fee.to_string()),
         attr("platform_fee", platform_fee.to_string()),
         attr("daily_vesting_amount", daily_vesting_amount.to_string()),
-    ]));
+    ]))
 }
 
-pub fn check_daily_vesting_amount(
-    storage: &mut dyn Storage,
-    timestamp: u64,
-    receiving_amount: Uint128,
-) -> Result<Response, ContractError> {
+fn check_daily_vesting_amount(storage: &mut dyn Storage, current_time: u64, receiving_amount: Uint128) -> Result<Response, ContractError> {
     let mut cfg = CONFIG.load(storage)?;
+    let last_timestamp = cfg.last_timestamp;
+    let current_bond_amount = cfg.daily_current_bond_amount;
 
-    if timestamp / 86400 != cfg.last_timestamp / 86400 {
-        // This is new day.
-        if cfg.daily_current_bond_amount <= cfg.daily_vesting_amount {
-            cfg.cumulated_amount += cfg.daily_vesting_amount - cfg.daily_current_bond_amount;
+    if last_timestamp + THOUSAND < current_time {
+        cfg.last_timestamp = current_time;
+        cfg.daily_current_bond_amount = receiving_amount;
+    } else {
+        if current_bond_amount + receiving_amount > cfg.daily_vesting_amount {
+            return Err(ContractError::InsufficientDailyVestingAmount {});
         }
-        cfg.daily_current_bond_amount = Uint128::zero();
+        cfg.daily_current_bond_amount += receiving_amount;
     }
 
-    if cfg.daily_current_bond_amount + receiving_amount
-        > cfg.daily_vesting_amount + cfg.cumulated_amount
-    {
-        return Err(ContractError::MaxBondingExceed {});
-    }
-    cfg.last_timestamp = timestamp;
-    cfg.daily_current_bond_amount += receiving_amount;
     CONFIG.save(storage, &cfg)?;
+    Ok(Response::new())
+}
 
-    Ok(Response::new().add_attribute("action", "check_daily_vesting_amount"))
+fn substract_daily_vesting_amount(storage: &mut dyn Storage, receiving_amount: Uint128) -> Result<Response, ContractError> {
+    let mut cfg = CONFIG.load(storage)?;
+    cfg.cumulated_amount += receiving_amount;
+    if cfg.cumulated_amount >= receiving_amount {
+        cfg.cumulated_amount -= receiving_amount;
+    } else {
+        cfg.cumulated_amount = Uint128::zero();
+    }
+    CONFIG.save(storage, &cfg)?;
+    Ok(Response::new())
 }
 
 pub fn execute_bond(
@@ -259,66 +254,41 @@ pub fn execute_bond(
 
     let cfg = CONFIG.load(deps.storage)?;
 
-    if !cfg.is_native_bonding {
-        return Err(ContractError::NotAllowedBondingType {});
+    let usdc_coin = info
+        .funds
+        .iter()
+        .find(|&coin| coin.denom == cfg.usdc_denom)
+        .ok_or(ContractError::InsufficientFunds {})?;
+
+    if usdc_coin.amount < amount {
+        return Err(ContractError::InsufficientFunds {});
     }
 
-    let balance = Balance::from(info.funds);
-    let usdc_amount = util::get_amount_of_denom(balance, Denom::Native(cfg.usdc_denom.clone()))?;
+    check_daily_vesting_amount(deps.storage, env.block.time.seconds(), amount)?;
 
-    if usdc_amount == Uint128::zero() {
-        return Err(ContractError::NativeInputZero {});
-    }
-    let fee_amount =
-        amount * Uint128::from(cfg.platform_fee + cfg.tx_fee) / Uint128::from(THOUSAND);
+    let mut current_bond = BONDING.load(deps.storage, info.sender.clone()).unwrap_or_default();
 
-    if usdc_amount < fee_amount + amount {
-        return Err(ContractError::InsufficientFee {});
-    }
+    let price_response: Token2ForToken1PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+        contract_addr: cfg.pool_address.to_string(),
+        msg: to_binary(&WasmswapQueryMsg::Token2ForToken1Price { token2_amount: amount })?,
+    }))?;
 
-    let token2_price_response: Token1ForToken2PriceResponse =
-        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: cfg.pool_address.clone().into(),
-            msg: to_binary(&WasmswapQueryMsg::Token1ForToken2Price {
-                token1_amount: amount,
-            })?,
-        }))?;
+    let bonding_amount = price_response.token1_amount
+        * Uint128::from((NORMAL_DECIMAL - cfg.discount) as u128)
+        / Uint128::from(NORMAL_DECIMAL as u128);
 
-    let receiving_amount = token2_price_response.token2_amount * Uint128::from(THOUSAND)
-        / Uint128::from(THOUSAND - cfg.discount);
+    current_bond.owner = info.sender.clone();
+    current_bond.bond_amount += bonding_amount;
+    current_bond.bond_timestamp = env.block.time.seconds();
 
-    check_daily_vesting_amount(deps.storage, env.block.time.seconds(), receiving_amount)?;
+    BONDING.save(deps.storage, info.sender.clone(), &current_bond)?;
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
-        Denom::Native(cfg.usdc_denom.clone()),
-        usdc_amount - fee_amount,
-        cfg.treasury_address.clone(),
-    )?);
-
-    let fee_wallet = FEE_WALLET.load(deps.storage)?;
-
-    messages.push(util::transfer_token_message(
-        Denom::Native(cfg.usdc_denom.clone()),
-        fee_amount,
-        deps.api.addr_validate(&fee_wallet)?,
-    )?);
-
-    let mut list: Vec<BondingRecord> = BONDING
-        .load(deps.storage, info.sender.clone())
-        .unwrap_or(vec![]);
-    list.push(BondingRecord {
-        amount: receiving_amount,
-        timestamp: env.block.time.seconds() + cfg.lock_seconds,
-    });
-    BONDING.save(deps.storage, info.sender.clone(), &list)?;
-
-    return Ok(Response::new().add_messages(messages).add_attributes(vec![
+    Ok(Response::new().add_attributes(vec![
         attr("action", "bond"),
-        attr("bond_usdc_amount", amount),
-        attr("receiving_fury_amount", receiving_amount),
-        attr("address", info.sender.clone()),
-    ]));
+        attr("address", info.sender),
+        attr("amount", amount.to_string()),
+        attr("bonding_amount", bonding_amount.to_string()),
+    ]))
 }
 
 pub fn execute_lp_bond(
@@ -329,42 +299,39 @@ pub fn execute_lp_bond(
     amount: Uint128,
 ) -> Result<Response, ContractError> {
     check_enabled(deps.storage)?;
-
     let cfg = CONFIG.load(deps.storage)?;
 
-    if info.sender.clone() != cfg.pool_address {
-        return Err(ContractError::Unauthorized {});
-    }
+    check_daily_vesting_amount(deps.storage, env.block.time.seconds(), amount)?;
 
-    if amount == Uint128::zero() {
-        return Err(ContractError::Cw20InputZero {});
-    }
+    let price_response: Token1ForToken2PriceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
+        contract_addr: cfg.pool_address.to_string(),
+        msg: to_binary(&WasmswapQueryMsg::Token1ForToken2Price { token1_amount: amount })?,
+    }))?;
 
-    if cfg.is_native_bonding {
-        return Err(ContractError::NotAllowedBondingType {});
-    }
+    let bonding_amount = price_response.token2_amount
+        * Uint128::from((NORMAL_DECIMAL - cfg.discount) as u128)
+        / Uint128::from(NORMAL_DECIMAL as u128);
 
-    // On lp bonding, the platform fee and tx fee is already stolen from swap contract
-    let receiving_amount =
-        amount * Uint128::from(THOUSAND) / Uint128::from(THOUSAND - cfg.discount);
+    let mut current_bond = BONDING.load(deps.storage, address.clone()).unwrap_or_default();
+    current_bond.owner = address.clone();
+    current_bond.bond_amount += bonding_amount;
+    current_bond.bond_timestamp = env.block.time.seconds();
 
-    check_daily_vesting_amount(deps.storage, env.block.time.seconds(), receiving_amount)?;
+    BONDING.save(deps.storage, address.clone(), &current_bond)?;
 
-    let mut list: Vec<BondingRecord> = BONDING
-        .load(deps.storage, address.clone())
-        .unwrap_or(vec![]);
-    list.push(BondingRecord {
-        amount: receiving_amount,
-        timestamp: env.block.time.seconds() + cfg.lock_seconds,
+    let bank_msg = CosmosMsg::Bank(BankMsg::Send {
+        to_address: cfg.treasury_address.to_string(),
+        amount: vec![Coin { denom: cfg.usdc_denom.clone(), amount }],
     });
-    BONDING.save(deps.storage, address.clone(), &list)?;
 
-    return Ok(Response::new().add_attributes(vec![
-        attr("action", "lp_bond"),
-        attr("bond_fury_amount", amount),
-        attr("receiving_amount", receiving_amount),
-        attr("address", address.clone()),
-    ]));
+    Ok(Response::new()
+        .add_message(bank_msg)
+        .add_attributes(vec![
+            attr("action", "lp_bond"),
+            attr("address", address),
+            attr("amount", amount.to_string()),
+            attr("bonding_amount", bonding_amount.to_string()),
+        ]))
 }
 
 pub fn execute_unbond(
@@ -373,65 +340,28 @@ pub fn execute_unbond(
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
     check_enabled(deps.storage)?;
-
     let cfg = CONFIG.load(deps.storage)?;
 
-    let list = BONDING.load(deps.storage, info.sender.clone())?;
+    let current_bond = BONDING.load(deps.storage, info.sender.clone())?;
 
-    let bond_state = get_bond_state(
-        cfg.clone(),
-        list.clone(),
-        get_usdc_price(cfg.clone(), deps.querier)?,
-        env.block.time.seconds(),
-        info.sender.clone(),
-    )?;
-
-    if bond_state.unbond_amount == Uint128::zero() {
-        return Err(ContractError::NothingToUnbond {});
+    if env.block.time.seconds() < current_bond.bond_timestamp + cfg.lock_seconds {
+        return Err(ContractError::UnbondingLock {});
     }
 
-    let mut new_list: Vec<BondingRecord> = vec![];
-    for item in list {
-        if item.timestamp > env.block.time.seconds() {
-            new_list.push(item);
-        }
-    }
-    BONDING.save(deps.storage, info.sender.clone(), &new_list)?;
+    BONDING.remove(deps.storage, info.sender.clone());
 
-    let balance = Balance::from(info.funds);
-    //calculate tx fee
-    let usdc_amount = util::get_amount_of_denom(balance, Denom::Native(cfg.usdc_denom.clone()))?;
+    let bank_msg = CosmosMsg::Bank(BankMsg::Send {
+        to_address: info.sender.to_string(),
+        amount: vec![Coin { denom: cfg.fury_token_denom.clone(), amount: current_bond.bond_amount }],
+    });
 
-    if usdc_amount < bond_state.fee_amount {
-        return Err(ContractError::InsufficientFee {});
-    }
-
-    let fury_balance = util::get_token_amount(
-        deps.querier,
-        Denom::Cw20(cfg.fury_token_address.clone()),
-        env.contract.address.clone(),
-    )?;
-    if fury_balance < bond_state.unbond_amount {
-        return Err(ContractError::InsufficientFury {});
-    }
-
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
-        Denom::Cw20(cfg.fury_token_address.clone()),
-        bond_state.unbond_amount,
-        info.sender.clone(),
-    )?);
-    messages.push(util::transfer_token_message(
-        Denom::Native(cfg.usdc_denom.clone()),
-        usdc_amount,
-        cfg.treasury_address.clone(),
-    )?);
-
-    return Ok(Response::new().add_messages(messages).add_attributes(vec![
-        attr("action", "unbond"),
-        attr("receiving_amount", bond_state.unbond_amount),
-        attr("address", info.sender.clone()),
-    ]));
+    Ok(Response::new()
+        .add_message(bank_msg)
+        .add_attributes(vec![
+            attr("action", "unbond"),
+            attr("address", info.sender),
+            attr("amount", current_bond.bond_amount.to_string()),
+        ]))
 }
 
 pub fn execute_withdraw(
@@ -440,177 +370,111 @@ pub fn execute_withdraw(
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    check_owner(deps.storage, info.sender.clone())?;
+    check_owner(deps.storage, info.sender)?;
 
     let cfg = CONFIG.load(deps.storage)?;
 
-    let fury_balance = util::get_token_amount(
-        deps.querier,
-        Denom::Cw20(cfg.fury_token_address.clone()),
-        env.contract.address.clone(),
-    )?;
-    if fury_balance < amount {
-        return Err(ContractError::InsufficientFury {});
+    let usdc_balance = deps.querier.query_balance(env.contract.address.clone(), cfg.usdc_denom)?;
+
+    if usdc_balance.amount < amount {
+        return Err(ContractError::InsufficientFunds {});
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
-        Denom::Cw20(cfg.fury_token_address.clone()),
-        amount,
-        info.sender.clone(),
-    )?);
+    let bank_msg = CosmosMsg::Bank(BankMsg::Send {
+        to_address: info.sender.to_string(),
+        amount: vec![Coin { denom: cfg.usdc_denom, amount }],
+    });
 
-    return Ok(Response::new().add_messages(messages).add_attributes(vec![
-        attr("action", "withdraw"),
-        attr("receiving_amount", amount),
-        attr("address", info.sender.clone()),
-    ]));
+    Ok(Response::new()
+        .add_message(bank_msg)
+        .add_attributes(vec![
+            attr("action", "withdraw"),
+            attr("address", info.sender),
+            attr("amount", amount.to_string()),
+        ]))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::Config {} => to_binary(&query_config(deps)?),
-        QueryMsg::BondState { address } => to_binary(&query_bond_state(deps, env, address)?),
-        QueryMsg::AllBondState { start_after, limit } => {
-            to_binary(&query_all_bond_state(deps, env, start_after, limit)?)
-        }
-        QueryMsg::GetFeeWallet {} => to_binary(&query_get_fee_wallet(deps.storage)?),
+        QueryMsg::Config {} => query_config(deps, env),
+        QueryMsg::BondState { address } => query_bond_state(deps, env, address),
+        QueryMsg::AllBondState { start_after, limit } => query_all_bond_state(deps, env, start_after, limit),
+        QueryMsg::GetFeeWallet {} => query_fee_wallet(deps),
     }
 }
 
-pub fn query_get_fee_wallet(storage: &dyn Storage) -> StdResult<String> {
-    let address = FEE_WALLET.load(storage)?;
-    return Ok(address);
-}
-
-pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
-    let cfg = CONFIG.load(deps.storage)?;
-    Ok(ConfigResponse {
-        owner: cfg.owner,
-        pool_address: cfg.pool_address,
-        treasury_address: cfg.treasury_address,
-        fury_token_address: cfg.fury_token_address,
-        lock_seconds: cfg.lock_seconds,
-        discount: cfg.discount,
-        usdc_denom: cfg.usdc_denom,
-        is_native_bonding: cfg.is_native_bonding,
-        tx_fee: cfg.tx_fee,
-        platform_fee: cfg.platform_fee,
-        enabled: cfg.enabled,
-        daily_current_bond_amount: cfg.daily_current_bond_amount,
-        cumulated_amount: cfg.cumulated_amount,
-        daily_vesting_amount: cfg.daily_vesting_amount,
-        last_timestamp: cfg.last_timestamp,
+pub fn query_config(deps: Deps, _env: Env) -> StdResult<Binary> {
+    let config = CONFIG.load(deps.storage)?;
+    to_binary(&ConfigResponse {
+        owner: config.owner,
+        pool_address: config.pool_address,
+        treasury_address: config.treasury_address,
+        fury_token_denom: config.fury_token_denom,
+        lock_seconds: config.lock_seconds,
+        discount: config.discount,
+        usdc_denom: config.usdc_denom,
+        is_native_bonding: config.is_native_bonding,
+        tx_fee: config.tx_fee,
+        platform_fee: config.platform_fee,
+        enabled: config.enabled,
+        daily_vesting_amount: config.daily_vesting_amount,
+        cumulated_amount: config.cumulated_amount,
+        daily_current_bond_amount: config.daily_current_bond_amount,
+        last_timestamp: config.last_timestamp,
     })
 }
 
-pub fn get_bond_state(
-    cfg: Config,
-    list: Vec<BondingRecord>,
-    usdc_price: Uint128,
-    current_timestamp: u64,
-    address: Addr,
-) -> StdResult<BondStateResponse> {
-    let mut unbond_amount = Uint128::zero();
-    let mut fee_amount = Uint128::zero();
-
-    for item in list.clone() {
-        if item.timestamp > current_timestamp {
-            continue;
-        }
-        unbond_amount += item.amount
-    }
-
-    if unbond_amount > Uint128::zero() {
-        fee_amount = usdc_price * unbond_amount * Uint128::from(cfg.platform_fee + cfg.tx_fee)
-            / Uint128::from(THOUSAND)
-            / Uint128::from(NORMAL_DECIMAL);
-    }
-
-    Ok(BondStateResponse {
+pub fn query_bond_state(deps: Deps, _env: Env, address: Addr) -> StdResult<Binary> {
+    let bond_state = BONDING.load(deps.storage, address.clone())?;
+    to_binary(&BondStateResponse {
         address,
-        list,
-        unbond_amount,
-        fee_amount,
+        list: vec![BondingRecord {
+            amount: bond_state.bond_amount,
+            timestamp: bond_state.bond_timestamp,
+        }],
+        unbond_amount: bond_state.bond_amount,
+        fee_amount: Uint128::zero(),
     })
 }
 
-pub fn get_usdc_price(cfg: Config, querier: QuerierWrapper) -> StdResult<Uint128> {
-    let usdc_price_response: Token2ForToken1PriceResponse =
-        querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: cfg.pool_address.clone().into(),
-            msg: to_binary(&WasmswapQueryMsg::Token2ForToken1Price {
-                token2_amount: Uint128::from(NORMAL_DECIMAL),
-            })?,
-        }))?;
-    Ok(usdc_price_response.token1_amount)
-}
-
-pub fn query_bond_state(deps: Deps, env: Env, address: Addr) -> StdResult<BondStateResponse> {
-    let cfg = CONFIG.load(deps.storage)?;
-
-    get_bond_state(
-        cfg.clone(),
-        BONDING
-            .load(deps.storage, address.clone())
-            .unwrap_or(vec![]),
-        get_usdc_price(cfg.clone(), deps.querier)?,
-        env.block.time.seconds(),
-        address.clone(),
-    )
-}
-
-// settings for pagination
-const MAX_LIMIT: u32 = 30;
-const DEFAULT_LIMIT: u32 = 10;
-
-fn map_bonding(
-    cfg: Config,
-    current_timestamp: u64,
-    usdc_price: Uint128,
-    item: StdResult<(Addr, Vec<BondingRecord>)>,
-) -> StdResult<BondStateResponse> {
-    item.map(|(address, list)| {
-        get_bond_state(cfg, list, usdc_price, current_timestamp, address.clone()).unwrap()
-    })
-}
-
-fn query_all_bond_state(
+pub fn query_all_bond_state(
     deps: Deps,
-    env: Env,
+    _env: Env,
     start_after: Option<String>,
     limit: Option<u32>,
-) -> StdResult<AllBondStateResponse> {
-    let cfg = CONFIG.load(deps.storage).unwrap();
+) -> StdResult<Binary> {
+    let limit = limit.unwrap_or(10).min(30) as usize;
+    let start = start_after.map(|s| Bound::ExclusiveRaw(s.into_bytes()));
 
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    let addr = maybe_addr(deps.api, start_after)?;
-    let start = addr.map(|addr| Bound::exclusive(addr));
-
-    let list: StdResult<Vec<_>> = BONDING
+    let all_bond_state: StdResult<Vec<_>> = BONDING
         .range(deps.storage, start, None, Order::Ascending)
         .take(limit)
         .map(|item| {
-            map_bonding(
-                cfg.clone(),
-                env.block.time.seconds(),
-                get_usdc_price(cfg.clone(), deps.querier)?,
-                item,
-            )
+            let (addr, bond_state) = item?;
+            Ok(BondStateResponse {
+                address: deps.api.addr_validate(&addr)?,
+                list: vec![BondingRecord {
+                    amount: bond_state.bond_amount,
+                    timestamp: bond_state.bond_timestamp,
+                }],
+                unbond_amount: bond_state.bond_amount,
+                fee_amount: Uint128::zero(),
+            })
         })
         .collect();
 
-    Ok(AllBondStateResponse { list: list? })
+    to_binary(&AllBondStateResponse {
+        list: all_bond_state?,
+    })
+}
+
+pub fn query_fee_wallet(deps: Deps) -> StdResult<Binary> {
+    let fee_wallet = FEE_WALLET.load(deps.storage)?;
+    to_binary(&fee_wallet)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    let version = get_contract_version(deps.storage)?;
-    if version.contract != CONTRACT_NAME {
-        return Err(ContractError::CannotMigrate {
-            previous_contract: version.contract,
-        });
-    }
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     Ok(Response::default())
 }
