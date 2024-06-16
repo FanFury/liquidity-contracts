@@ -233,7 +233,7 @@ fn check_daily_vesting_amount(storage: &mut dyn Storage, current_time: u64, rece
     Ok(Response::new())
 }
 
-fn substract_daily_vesting_amount(storage: &mut dyn Storage, receiving_amount: Uint128) -> Result<Response, ContractError> {
+fn subtract_daily_vesting_amount(storage: &mut dyn Storage, receiving_amount: Uint128) -> Result<Response, ContractError> {
     let mut cfg = CONFIG.load(storage)?;
     cfg.cumulated_amount += receiving_amount;
     if cfg.cumulated_amount >= receiving_amount {
@@ -244,6 +244,7 @@ fn substract_daily_vesting_amount(storage: &mut dyn Storage, receiving_amount: U
     CONFIG.save(storage, &cfg)?;
     Ok(Response::new())
 }
+
 
 pub fn execute_bond(
     deps: DepsMut,
@@ -459,8 +460,8 @@ pub fn query_all_bond_state(
                     bond_amount: bond_state.bond_amount,
                     bond_timestamp: bond_state.bond_timestamp,
                 }],
-                unbond_amount: bond_state.bond_amount,
-                fee_amount: Uint128::zero(),
+                unbond_amount: bond_state.bond_amount, // Correct this to reflect actual logic
+                fee_amount: Uint128::zero(), // Correct this to reflect actual logic
             })
         })
         .collect();
@@ -469,6 +470,7 @@ pub fn query_all_bond_state(
         list: all_bond_state?,
     })
 }
+
 
 pub fn query_fee_wallet(deps: Deps) -> StdResult<Binary> {
     let fee_wallet = FEE_WALLET.load(deps.storage)?;
